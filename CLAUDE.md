@@ -121,9 +121,16 @@ docker run -d -p 3001:3001 cider-remote-server
 - Server URL stored in localStorage as `cider_remote_url`
 - No persistent database - all room state is in-memory
 
-### Vite Proxy
+### Vite Development Proxy
 
-The vite.config.js includes a proxy configuration for development that routes `/api` requests to a hardcoded IP address. When working locally, you may need to update the target IP or configure the client to use the correct Cider host URL in settings.
+The vite.config.js includes a proxy for development that routes `/api` requests to bypass CORS. Configure via environment variable:
+
+```bash
+# Create .env file (see .env.example)
+VITE_CIDER_HOST=http://localhost:10767
+```
+
+The proxy only affects `npm run dev`. Production builds use the host URL configured in app settings.
 
 ### Build Output
 

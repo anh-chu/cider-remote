@@ -8,7 +8,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://192.168.31.104:10767',
+        target: process.env.VITE_CIDER_HOST || 'http://localhost:10767',
         changeOrigin: true,
         secure: false,
       }

@@ -122,8 +122,8 @@ export default function App() {
     }
 
     let host = config.host;
-    // Auto-proxy for known CORS-problematic IP in dev mode
-    if (import.meta.env.DEV && host.includes('192.168.31.104')) {
+    // Auto-proxy to localhost in dev mode (matches vite proxy config)
+    if (import.meta.env.DEV && host === 'http://localhost:10767') {
       host = '';
     }
 
