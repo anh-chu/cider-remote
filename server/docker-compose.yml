@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  cider-remote-server:
+    image: cider-remote-server:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cider-remote-server
+    restart: unless-stopped
+
+    ports:
+      - "3001:3001"
+
+    environment:
+      # Server Configuration
+      - PORT=3001
+      - NODE_ENV=production
+
+      # CORS Configuration (not currently used in code, but good to have)
+      # To enable, modify server code to use these values
+      - CORS_ORIGIN=*
+      - CORS_METHODS=GET,POST
+
+      # Logging
+      - LOG_LEVEL=info
+
+      # Node.js Performance Tuning
+      - NODE_OPTIONS=--max-old-space-size=512
+
+    # Health check to monitor server status
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    # Resource limits (adjust based on your needs)
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+
+    # Network configuration
+    networks:
+      - cider-network
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  cider-network:
+    driver: bridge
