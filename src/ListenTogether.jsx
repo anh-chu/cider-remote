@@ -14,7 +14,14 @@ export default function ListenTogether({
     const [currentTime, setCurrentTime] = useState(0);
     const [roomId, setRoomId] = useState('');
     const [username, setUsername] = useState('');
-    const [serverUrl, setServerUrl] = useState(() => localStorage.getItem('cider_remote_url') || 'http://localhost:3001');
+    const [serverUrl, setServerUrl] = useState(() => {
+        try {
+            return localStorage.getItem('cider_remote_url') || 'http://localhost:3001';
+        } catch (e) {
+            console.error('Failed to load server URL from localStorage:', e);
+            return 'http://localhost:3001';
+        }
+    });
     const [showSettings, setShowSettings] = useState(false);
     const [joinedRoom, setJoinedRoom] = useState(null);
     const [queue, setQueue] = useState([]);
@@ -35,7 +42,11 @@ export default function ListenTogether({
 
     const connect = async () => {
         try {
-            localStorage.setItem('cider_remote_url', serverUrl);
+            try {
+                localStorage.setItem('cider_remote_url', serverUrl);
+            } catch (err) {
+                console.error('Failed to save server URL to localStorage:', err);
+            }
             const s = io(serverUrl);
 
             s.on('connect', () => {

@@ -68,15 +68,25 @@ const Slider = ({ value, max, onChange, onCommit, onSeekStart, className = "", s
 export default function App() {
   // Configuration State
   const [config, setConfig] = useState(() => {
-    const saved = localStorage.getItem('cider_config');
-    return saved ? JSON.parse(saved) : { host: 'http://localhost:10767', token: '' };
+    try {
+      const saved = localStorage.getItem('cider_config');
+      return saved ? JSON.parse(saved) : { host: 'http://localhost:10767', token: '' };
+    } catch (e) {
+      console.error('Failed to load config from localStorage:', e);
+      return { host: 'http://localhost:10767', token: '' };
+    }
   });
   const [showSettings, setShowSettings] = useState(false);
 
   // Player State
   // Default to 'connecting' if we have a config, otherwise 'disconnected'
   const [status, setStatus] = useState(() => {
-    return localStorage.getItem('cider_config') ? 'connecting' : 'disconnected';
+    try {
+      return localStorage.getItem('cider_config') ? 'connecting' : 'disconnected';
+    } catch (e) {
+      console.error('Failed to check localStorage:', e);
+      return 'disconnected';
+    }
   });
   const [errorMsg, setErrorMsg] = useState('');
   const [nowPlaying, setNowPlaying] = useState(null);
@@ -426,8 +436,11 @@ export default function App() {
       token: formData.get('token')
     };
     setConfig(newConfig);
-    localStorage.setItem('cider_config', JSON.stringify(newConfig));
-    setShowSettings(false);
+    try {
+      localStorage.setItem('cider_config', JSON.stringify(newConfig));
+    } catch (err) {
+      console.error('Failed to save config to localStorage:', err);
+    }
     setShowSettings(false);
     // Hard reset connection
     errorCount.current = 0;
