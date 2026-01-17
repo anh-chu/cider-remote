@@ -463,6 +463,89 @@ export default function App() {
     return url.replace('{w}', '600').replace('{h}', '600').replace('640x640sr', '600x600bb');
   };
 
+  // --- Hooks for ListenTogether (must be called before conditional returns) ---
+
+  const ciderStateMemo = useMemo(() => ({
+    nowPlaying: nowPlaying,
+    isPlaying: isPlaying,
+    currentTime: isSeeking ? seekValue : currentTime,
+    lastSeekTimeRef: lastSeekTime, // [Fix] Share debounce ref
+    lastSeekTimestamp: lastSeekTime.current // [Fix] Trigger immediate broadcast on seek
+  }), [nowPlaying, isPlaying, isSeeking, seekValue, currentTime]);
+
+  const onRemoteActionCallback = useCallback(async (action, payload) => {
+    try {
+      if (action === 'play') {
+        await apiCall('/play', 'POST');
+      } else if (action === 'pause') {
+        await apiCall('/pause', 'POST');
+      } else if (action === 'next') {
+        await apiCall('/next', 'POST');
+      } else if (action === 'previous') {
+        await apiCall('/previous', 'POST');
+      } else if (action === 'seek') {
+        console.log("App: Phantom Hand? (Remote Seek) Payload:", payload);
+        lastSeekTime.current = Date.now(); // [Fix] Start debounce for remote seeks too
+        setCurrentTime(payload); // Optimistic update to break sync loop
+        await apiCall('/seek', 'POST', { position: payload });
+      } else if (action === 'search') {
+        // Search Strategy
+
+        // Try Apple Music Catalog Search via Cider Proxy (POST /run-v3)
+        // Doc: https://cider.sh/docs/client/rpc#post-run-v3
+        const term = encodeURIComponent(payload);
+        try {
+          // We must use POST to /run-v3
+          // Path inside body: /v1/catalog/us/search?types=songs&term=...
+          const amapiPath = `/v1/catalog/us/search?types=songs&limit=10&term=${term}`;
+
+          const res = await apiCall('/run-v3', 'POST', { path: amapiPath }, '/api/v1/amapi');
+
+          // Response structure: { data: { results: { songs: { data: [...] } } } }
+          const data = res.data || res; // handle potential wrapper differences
+
+          if (data && data.results && data.results.songs) {
+            return data.results.songs.data.map(song => ({
+              id: song.id,
+              name: song.attributes.name,
+              artistName: song.attributes.artistName,
+              albumName: song.attributes.albumName,
+              durationInMillis: song.attributes.durationInMillis,
+              artwork: {
+                url: song.attributes.artwork.url
+              }
+            }));
+          }
+          return [];
+
+        } catch (e) {
+          console.error("Search API failed", e);
+          return [];
+        }
+      } else if (action === 'play_song') {
+        // Standard Play by ID
+        const songId = payload.id || payload.playParams?.id;
+
+        if (!songId) {
+          console.error("Missing Song ID in play_song payload!", JSON.stringify(payload));
+          return;
+        }
+
+        try {
+          await apiCall('/play-item', 'POST', {
+            type: 'songs',
+            id: songId
+          });
+        } catch (e) {
+          console.error("Failed to play remote song using /play-item", e);
+          // Optional: Try fallback to /play (queue) if strictly needed, but ID play is standard.
+        }
+      }
+    } catch (e) {
+      console.error("Remote action failed", e);
+    }
+  }, [isPlaying, seekValue, currentTime, apiCall, setRemoteControls]);
+
   // --- Render ---
 
   if (showSettings || status === 'disconnected') {
@@ -692,85 +775,8 @@ export default function App() {
         <ListenTogether
           isConnected={status === 'connected'}
           setRemoteControls={setRemoteControls}
-          ciderState={useMemo(() => ({
-            nowPlaying: nowPlaying,
-            isPlaying: isPlaying,
-            currentTime: isSeeking ? seekValue : currentTime,
-            lastSeekTimeRef: lastSeekTime, // [Fix] Share debounce ref
-            lastSeekTimestamp: lastSeekTime.current // [Fix] Trigger immediate broadcast on seek
-          }), [nowPlaying, isPlaying, isSeeking, seekValue, currentTime])}
-          onRemoteAction={useCallback(async (action, payload) => {
-            try {
-              if (action === 'play') {
-                await apiCall('/play', 'POST');
-              } else if (action === 'pause') {
-                await apiCall('/pause', 'POST');
-              } else if (action === 'next') {
-                await apiCall('/next', 'POST');
-              } else if (action === 'previous') {
-                await apiCall('/previous', 'POST');
-              } else if (action === 'seek') {
-                console.log("App: Phantom Hand? (Remote Seek) Payload:", payload);
-                lastSeekTime.current = Date.now(); // [Fix] Start debounce for remote seeks too
-                setCurrentTime(payload); // Optimistic update to break sync loop
-                await apiCall('/seek', 'POST', { position: payload });
-              } else if (action === 'search') {
-                // Search Strategy
-
-                // Try Apple Music Catalog Search via Cider Proxy (POST /run-v3)
-                // Doc: https://cider.sh/docs/client/rpc#post-run-v3
-                const term = encodeURIComponent(payload);
-                try {
-                  // We must use POST to /run-v3
-                  // Path inside body: /v1/catalog/us/search?types=songs&term=...
-                  const amapiPath = `/v1/catalog/us/search?types=songs&limit=10&term=${term}`;
-
-                  const res = await apiCall('/run-v3', 'POST', { path: amapiPath }, '/api/v1/amapi');
-
-                  // Response structure: { data: { results: { songs: { data: [...] } } } }
-                  const data = res.data || res; // handle potential wrapper differences
-
-                  if (data && data.results && data.results.songs) {
-                    return data.results.songs.data.map(song => ({
-                      id: song.id,
-                      name: song.attributes.name,
-                      artistName: song.attributes.artistName,
-                      albumName: song.attributes.albumName,
-                      durationInMillis: song.attributes.durationInMillis,
-                      artwork: {
-                        url: song.attributes.artwork.url
-                      }
-                    }));
-                  }
-                  return [];
-
-                } catch (e) {
-                  console.error("Search API failed", e);
-                  return [];
-                }
-              } else if (action === 'play_song') {
-                // Standard Play by ID
-                const songId = payload.id || payload.playParams?.id;
-
-                if (!songId) {
-                  console.error("Missing Song ID in play_song payload!", JSON.stringify(payload));
-                  return;
-                }
-
-                try {
-                  await apiCall('/play-item', 'POST', {
-                    type: 'songs',
-                    id: songId
-                  });
-                } catch (e) {
-                  console.error("Failed to play remote song using /play-item", e);
-                  // Optional: Try fallback to /play (queue) if strictly needed, but ID play is standard.
-                }
-              }
-            } catch (e) {
-              console.error("Remote action failed", e);
-            }
-          }, [isPlaying, seekValue, currentTime, apiCall, setRemoteControls])}
+          ciderState={ciderStateMemo}
+          onRemoteAction={onRemoteActionCallback}
           apiCall={apiCall}
         />
       </div>
