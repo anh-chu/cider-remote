@@ -39,6 +39,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Remove pnpm lock file
+        run: rm -f pnpm-lock.yaml
+        shell: bash
+
       - name: Build web app
         run: npm run build
 
