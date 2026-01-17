@@ -18,6 +18,7 @@
   "build": {
     "appId": "sh.cider.remote",
     "productName": "Cider Remote",
+    "npmRebuild": false,
     "directories": {
       "output": "dist_electron"
     },
