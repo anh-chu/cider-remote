@@ -524,20 +524,29 @@ export default function App() {
         }
       } else if (action === 'play_song') {
         // Standard Play by ID
-        const songId = payload.id || payload.playParams?.id;
+        console.log("🎯 App: Received play_song action. Payload:", JSON.stringify(payload, null, 2));
+
+        // Prefer catalogId for library songs (universal), fallback to regular id
+        // Library IDs (i.xxx) only work in the owner's Cider instance
+        const songId = payload.playParams?.catalogId ||
+                       payload.catalogId ||
+                       payload.id ||
+                       payload.playParams?.id;
 
         if (!songId) {
-          console.error("Missing Song ID in play_song payload!", JSON.stringify(payload));
+          console.error("❌ Missing Song ID in play_song payload!", JSON.stringify(payload));
           return;
         }
 
+        console.log("🎯 App: Attempting to play song ID:", songId, "(isLibrary:", payload.playParams?.isLibrary, ")");
         try {
           await apiCall('/play-item', 'POST', {
             type: 'songs',
             id: songId
           });
+          console.log("✅ App: Successfully called /play-item for song ID:", songId);
         } catch (e) {
-          console.error("Failed to play remote song using /play-item", e);
+          console.error("❌ Failed to play remote song using /play-item", e);
           // Optional: Try fallback to /play (queue) if strictly needed, but ID play is standard.
         }
       }

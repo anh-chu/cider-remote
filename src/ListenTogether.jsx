@@ -56,7 +56,8 @@ export default function ListenTogether({
 
             s.on('sync_state', (state) => {
                 const q = state.queue || [];
-                console.log("Slave: Received Sync State. Queue Len:", q.length, "Source:", state.source);
+                console.log("📥 Slave: Received Sync State. Queue Len:", q.length, "Source:", state.source);
+                console.log("📥 Slave: Received Song:", state.playback?.currentSong?.name, "| ID:", state.playback?.currentSong?.id, "| playParams.id:", state.playback?.currentSong?.playParams?.id);
                 if (q.length === 0) console.warn("Slave: Received EMPTY queue!");
                 setQueue(q);
                 setHistory(state.history || []);
@@ -155,26 +156,6 @@ export default function ListenTogether({
     const lastServerSeekTSRef = useRef(0); // [Fix] Smart Guard
     ciderStateRef.current = ciderState; // [Fix] Always keep ref fresh synchronously (Render Phase)
 
-    // Sync Logic: React to Server State & Master Logic
-    useEffect(() => {
-        if (!serverState || !joinedRoom) return;
-        // ... (Sync logic omitted for brevity in this replacement chunk, assuming it matches existing)
-    }, [serverState, joinedRoom, ciderState.lastSeekTimeRef, socket, masterId]);
-    // Wait, the Sync Logic useEffect is huge. I should be careful not to overwrite it entirely if I'm just adding Refs above.
-    // The previous view showed lines 100-300.
-    // I will just modify the Refs section and the poll function.
-
-    // Actually, let's just do the refs first.
-    // ...
-
-    /* 
-       I will split this into two operations for safety. 
-       1. Add Refs.
-       2. Update Poll Logic.
-    */
-
-    // useEffect(() => { ciderStateRef.current = ciderState; }, [ciderState]); // REMOVED: Caused race condition
-
     // [Debug] Trace Master Promotion
     useEffect(() => {
         const isMaster = socket && socket.id === masterId;
@@ -233,23 +214,38 @@ export default function ListenTogether({
         // Only sync if local state is valid (object or null, not error object)
         const localName = ciderState.nowPlaying?.name;
         if (currentSong?.name !== localName) {
+            console.log("🎵 Sync: Song mismatch detected! Server:", currentSong?.name, "| Local:", localName);
             // Avoid syncing if local state looks like an error
             if (ciderState.nowPlaying && ciderState.nowPlaying.error) {
                 console.log("Sync: Ignoring song sync due to local error state");
             } else {
                 // DEBOUNCE: If we just synced this song < 5 seconds ago, wait.
                 // This handles the gap between "Request Play" and "Cider Updates State"
-                const songId = currentSong?.playParams?.id || currentSong?.id;
+                // Prefer catalogId for consistency (library IDs are user-specific)
+                const songId = currentSong?.playParams?.catalogId ||
+                              currentSong?.catalogId ||
+                              currentSong?.playParams?.id ||
+                              currentSong?.id ||
+                              currentSong?.name;
                 const now = Date.now();
 
-                if (songId === lastSongSync.current.id && (now - lastSongSync.current.time) < 5000) {
-                    // console.debug("Sync: Debouncing Song Sync (waiting for Cider to load)...");
+                // Only apply debounce if we have a valid songId AND it matches the last sync
+                const shouldDebounce = songId && lastSongSync.current.id &&
+                                      songId === lastSongSync.current.id &&
+                                      (now - lastSongSync.current.time) < 5000;
+
+                console.log("🔍 Sync Debug: songId:", songId, "| lastSync:", lastSongSync.current.id, "| shouldDebounce:", shouldDebounce);
+
+                if (shouldDebounce) {
+                    console.log("⏸️ Sync: Debouncing Song Sync (waiting for Cider to load)...");
                 } else {
-                    // console.debug("Sync: Song mismatch. Server:", currentSong?.name, "Local:", localName);
+                    console.log("▶️ Sync: Attempting to play:", currentSong?.name, "| Song Object:", JSON.stringify(currentSong, null, 2));
                     if (currentSong && (!localName || currentSong.name !== localName)) {
-                        // console.debug("Sync: Triggering Play Song:", currentSong.name);
+                        console.log("✅ Sync: Triggering Play Song:", currentSong.name);
                         lastSongSync.current = { id: songId, time: now }; // Update Ref
                         onRemoteAction('play_song', currentSong);
+                    } else {
+                        console.log("❌ Sync: Skipping - condition not met");
                     }
                 }
             }
@@ -400,6 +396,7 @@ export default function ListenTogether({
                 // 4. Broadcast to Room (If in room)
                 if (isMaster) {
                     if (upNextList.length === 0) console.warn("Master: About to broadcast EMPTY queue! Source data:", queueData ? queueData.length : 'null');
+                    console.log("📡 Master Broadcasting - Song:", ciderStateRef.current.nowPlaying?.name, "| ID:", ciderStateRef.current.nowPlaying?.id, "| playParams.id:", ciderStateRef.current.nowPlaying?.playParams?.id);
                     socket.emit('master_state_update', {
                         roomId: joinedRoom,
                         state: {
