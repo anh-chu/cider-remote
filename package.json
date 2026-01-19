@@ -21,11 +21,7 @@
     "appId": "sh.cider.remote",
     "productName": "Cider Remote",
     "npmRebuild": false,
-    "publish": {
-      "provider": "github",
-      "owner": "anh-chu",
-      "repo": "cider-remote"
-    },
+    "publish": null,
     "directories": {
       "output": "dist_electron"
     },

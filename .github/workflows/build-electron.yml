@@ -49,7 +49,8 @@ jobs:
       - name: Build Electron app
         run: npm run electron:build-${{ matrix.platform }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Don't set GH_TOKEN - prevents electron-builder from auto-publishing
+          SKIP_PUBLISH: true
 
       - name: List build artifacts (macOS)
         if: matrix.platform == 'mac'

@@ -562,7 +562,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-neutral-900 text-white flex items-center justify-center p-4 font-sans">
         <Card className="w-full max-w-md">
-          <div className="flex items-center gap-3 mb-6 border-b border-white/10 pb-4">
+          <div className="flex items-center gap-3 mb-6 border-b border-white/10 pb-4" style={{ WebkitAppRegion: 'drag' }}>
             <Settings className="text-red-500" />
             <h2 className="text-2xl font-bold">Cider Remote Setup</h2>
           </div>
@@ -634,7 +634,7 @@ export default function App() {
       <div className="w-full max-w-md z-10 relative">
 
         {/* Header */}
-        <div className="flex justify-between items-center mb-6 px-2">
+        <div className="flex justify-between items-center mb-6 px-2" style={{ WebkitAppRegion: 'drag' }}>
           <div className="flex items-center gap-2">
             <div className={`w-2 h-2 rounded-full transition-colors duration-500 ${status === 'connected' ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' :
               'bg-red-500 animate-pulse'
@@ -643,7 +643,7 @@ export default function App() {
               {status === 'connected' ? 'Cider Connected' : 'Disconnected'}
             </span>
           </div>
-          <button onClick={() => setShowSettings(true)} className="text-white/40 hover:text-white transition-colors">
+          <button onClick={() => setShowSettings(true)} className="text-white/40 hover:text-white transition-colors" style={{ WebkitAppRegion: 'no-drag' }}>
             <Settings size={20} />
           </button>
         </div>
