@@ -61,12 +61,6 @@
     },
     "dmg": {
       "writeUpdateInfo": true
-    },
-    "linux": {
-      "target": [
-        "AppImage"
-      ],
-      "category": "Utility"
     }
   },
   "dependencies": {
