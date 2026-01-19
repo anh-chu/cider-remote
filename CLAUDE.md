@@ -195,12 +195,12 @@ Auto-updates require specific build targets:
 
 Releases are automatically published via GitHub Actions:
 
-1. **Update Version**: Edit `package.json` and change version (e.g., `"0.3"` → `"0.4"`)
+1. **Update Version**: Edit `package.json` and change version (e.g., `"0.3.0"` → `"0.4.0"`)
 
 2. **Tag and Push**:
    ```bash
-   git commit -am "Bump version to 0.4"
-   git tag v0.4
+   git commit -am "Bump version to 0.4.0"
+   git tag v0.4.0
    git push && git push --tags
    ```
 
@@ -209,14 +209,16 @@ Releases are automatically published via GitHub Actions:
    - Publishes to GitHub Releases with all update metadata files
    - Existing installations will detect the update automatically
 
+**Note:** Version must be valid semver (x.y.z format). This project uses x.y.0 where patch is always 0.
+
 ### Testing Updates
 
 Auto-updates only work in packaged production builds, not in development mode. To test:
 
-1. Build and install version 0.3
-2. Bump to version 0.4, tag, and push
+1. Build and install version 0.3.0
+2. Bump to version 0.4.0, tag, and push
 3. GitHub Actions builds and publishes the release
-4. Run the installed 0.3 app - it should detect the update after 3 seconds
+4. Run the installed 0.3.0 app - it should detect the update after 3 seconds
 
 ### Update Channels
 

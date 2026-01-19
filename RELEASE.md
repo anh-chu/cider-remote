@@ -16,13 +16,13 @@ This is the standard workflow for creating releases. Each tag automatically buil
 #### 1. Update Version and Create Tag
 
 ```bash
-# Update version in package.json (use x.y format)
-# Edit package.json manually: "version": "0.4"
+# Update version in package.json (use x.y.0 format)
+# Edit package.json manually: "version": "0.4.0"
 
 # Create and push tag
 git add package.json
-git commit -m "Bump version to 0.4"
-git tag v0.4
+git commit -m "Bump version to 0.4.0"
+git tag v0.4.0
 git push && git push --tags
 ```
 
@@ -58,19 +58,21 @@ Artifacts will be in `dist_electron/` directory.
 
 ## Version Strategy
 
-This project uses a simple x.y versioning scheme:
+This project uses x.y.0 versioning (patch version always 0):
 
-- **0.3** → **0.4**: Minor version bump for new features/fixes
-- **0.9** → **1.0**: Major milestone
-- **1.0** → **1.1**: Continue incrementing
+- **0.3.0** → **0.4.0**: Minor version bump for new features/fixes
+- **0.9.0** → **1.0.0**: Major milestone
+- **1.0.0** → **1.1.0**: Continue incrementing
 
-**Current Version:** 0.3
+**Current Version:** 0.3.0
+
+**Note:** electron-builder requires valid semver (major.minor.patch), so we use x.y.0 format where patch is always 0.
 
 ### Creating a New Version
 
-1. Edit `package.json` and update the `"version"` field (e.g., `"0.3"` → `"0.4"`)
-2. Commit: `git commit -am "Bump version to 0.4"`
-3. Tag: `git tag v0.4`
+1. Edit `package.json` and update the `"version"` field (e.g., `"0.3.0"` → `"0.4.0"`)
+2. Commit: `git commit -am "Bump version to 0.4.0"`
+3. Tag: `git tag v0.4.0`
 4. Push: `git push && git push --tags`
 5. GitHub Actions handles the rest
 
@@ -100,7 +102,7 @@ If you already have Cider Remote installed, the app will automatically notify yo
 
 The `.github/workflows/build-electron.yml` workflow:
 
-1. **Triggers** on any tag push matching `v*` (e.g., `v0.4`, `v1.0`)
+1. **Triggers** on any tag push matching `v*` (e.g., `v0.4.0`, `v1.0.0`)
 2. **Builds** on both macOS and Windows runners in parallel
 3. **Publishes** directly to GitHub Releases using `--publish always`
 4. **Uploads** all necessary files:
@@ -120,5 +122,6 @@ The workflow uses `GITHUB_TOKEN` which is automatically available in GitHub Acti
 ### Build Fails on GitHub Actions
 
 1. Check the Actions logs for specific errors
-2. Verify the tag format is `vX.Y` (e.g., `v0.4`)
+2. Verify the tag format is `vX.Y.Z` (e.g., `v0.4.0`)
 3. Ensure `package.json` version matches the tag (without the `v` prefix)
+4. Version must be valid semver (three numbers: major.minor.patch)
