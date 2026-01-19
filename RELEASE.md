@@ -104,12 +104,14 @@ The `.github/workflows/build-electron.yml` workflow:
 
 1. **Triggers** on any tag push matching `v*` (e.g., `v0.4.0`, `v1.0.0`)
 2. **Builds** on both macOS and Windows runners in parallel
-3. **Publishes** directly to GitHub Releases using `--publish always`
-4. **Uploads** all necessary files:
+3. **Uploads** build artifacts to GitHub Actions
+4. **Release Job** downloads all artifacts and creates a GitHub Release with:
    - Windows: NSIS installer, blockmap, `latest.yml`
    - macOS: DMG, ZIP, `latest-mac.yml`
 
 The workflow uses `GITHUB_TOKEN` which is automatically available in GitHub Actions.
+
+**Note:** The release is created by the workflow itself using `softprops/action-gh-release`, not by electron-builder's publish feature.
 
 ## Troubleshooting
 

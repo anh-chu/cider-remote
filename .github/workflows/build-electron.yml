@@ -47,7 +47,7 @@ jobs:
         run: npm run build
 
       - name: Build Electron app
-        run: npm run electron:build-${{ matrix.platform }} -- --publish always
+        run: npm run electron:build-${{ matrix.platform }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -60,11 +60,83 @@ jobs:
         run: dir dist_electron\
         shell: cmd
 
-      - name: Upload build artifacts (for debugging)
-        if: always()
+      - name: Upload artifacts (macOS)
+        if: matrix.platform == 'mac' && startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v4
         with:
           name: cider-remote-${{ matrix.artifact-name }}
-          path: dist_electron/
-          if-no-files-found: warn
-          retention-days: 7
+          path: |
+            dist_electron/*.dmg
+            dist_electron/*.zip
+            dist_electron/latest-mac.yml
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload artifacts (Windows)
+        if: matrix.platform == 'win' && startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: cider-remote-${{ matrix.artifact-name }}
+          path: |
+            dist_electron/*.exe
+            dist_electron/*.exe.blockmap
+            dist_electron/latest.yml
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: cider-remote-macos
+          path: artifacts/macos
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: cider-remote-windows
+          path: artifacts/windows
+
+      - name: List downloaded artifacts
+        run: |
+          echo "=== macOS artifacts ==="
+          ls -la artifacts/macos/
+          echo "=== Windows artifacts ==="
+          ls -la artifacts/windows/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/macos/*.dmg
+            artifacts/macos/*.zip
+            artifacts/macos/latest-mac.yml
+            artifacts/windows/*.exe
+            artifacts/windows/*.blockmap
+            artifacts/windows/latest.yml
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## Installation
+
+            **Windows**: Download `Cider-Remote-Setup-*.exe` and run the installer
+            **macOS**: Download `Cider-Remote-*.dmg` and drag to Applications
+
+            ## Auto-Update
+
+            If you already have Cider Remote installed, the app will automatically check for this update on startup and notify you.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
