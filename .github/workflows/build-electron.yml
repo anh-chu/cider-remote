@@ -25,6 +25,9 @@ jobs:
           - os: windows-latest
             platform: win
             artifact-name: windows
+          - os: ubuntu-latest
+            platform: linux
+            artifact-name: linux
 
     steps:
       - name: Checkout code
@@ -46,8 +49,19 @@ jobs:
       - name: Build web app
         run: npm run build
 
-      - name: Build Electron app
+      - name: Build Electron app (Mac/Win)
+        if: matrix.platform != 'linux'
         run: npm run electron:build-${{ matrix.platform }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Electron app (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          npm run build
+          npx electron-builder --linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: List build artifacts (macOS)
         if: matrix.platform == 'mac'
@@ -58,13 +72,42 @@ jobs:
         run: dir dist_electron\
         shell: cmd
 
-      - name: Upload artifacts
+      - name: List build artifacts (Linux)
+        if: matrix.platform == 'linux'
+        run: ls -la dist_electron/
+
+      - name: Upload artifacts (macOS)
+        if: matrix.platform == 'mac'
         uses: actions/upload-artifact@v4
         with:
           name: cider-remote-${{ matrix.artifact-name }}
           path: |
+            dist_electron/*.dmg
             dist_electron/*.zip
+            dist_electron/latest-mac.yml
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload artifacts (Windows)
+        if: matrix.platform == 'win'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cider-remote-${{ matrix.artifact-name }}
+          path: |
             dist_electron/*.exe
+            dist_electron/*.exe.blockmap
+            dist_electron/latest.yml
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload artifacts (Linux)
+        if: matrix.platform == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cider-remote-${{ matrix.artifact-name }}
+          path: |
+            dist_electron/*.AppImage
+            dist_electron/latest-linux.yml
           if-no-files-found: error
           retention-days: 30
 
@@ -93,21 +136,45 @@ jobs:
           name: cider-remote-windows
           path: artifacts/windows
 
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: cider-remote-linux
+          path: artifacts/linux
+
       - name: List downloaded artifacts
         run: |
           echo "=== macOS artifacts ==="
           ls -la artifacts/macos/
           echo "=== Windows artifacts ==="
           ls -la artifacts/windows/
+          echo "=== Linux artifacts ==="
+          ls -la artifacts/linux/
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
+            artifacts/macos/*.dmg
             artifacts/macos/*.zip
+            artifacts/macos/latest-mac.yml
             artifacts/windows/*.exe
+            artifacts/windows/*.blockmap
+            artifacts/windows/latest.yml
+            artifacts/linux/*.AppImage
+            artifacts/linux/latest-linux.yml
           draft: false
           prerelease: false
           generate_release_notes: true
+          body: |
+            ## Installation
+
+            **Windows**: Download `Cider-Remote-Setup-*.exe` and run the installer
+            **macOS**: Download `Cider-Remote-*.dmg` and drag to Applications
+            **Linux**: Download `Cider-Remote-*.AppImage`, make executable, and run
+
+            ## Auto-Update
+
+            If you already have Cider Remote installed, the app will automatically check for this update on startup and notify you.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -5,6 +5,7 @@ import {
   AlertTriangle, Music, Disc, Loader2, Radio
 } from 'lucide-react';
 import ListenTogether from './ListenTogether';
+import UpdateNotification from './UpdateNotification';
 
 /**
  * CIDER REMOTE CONTROLLER
@@ -788,6 +789,9 @@ export default function App() {
           onRemoteAction={onRemoteActionCallback}
           apiCall={apiCall}
         />
+
+        {/* Auto-Update Notification */}
+        <UpdateNotification />
       </div>
     </div >
   );

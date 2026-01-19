@@ -19,25 +19,58 @@
     "appId": "sh.cider.remote",
     "productName": "Cider Remote",
     "npmRebuild": false,
-    "publish": null,
+    "publish": {
+      "provider": "github",
+      "owner": "anh-chu",
+      "repo": "cider-remote"
+    },
     "directories": {
       "output": "dist_electron"
     },
     "files": [
       "dist/**/*",
-      "electron/**/*"
+      "electron/**/*",
+      "node_modules/electron-updater/**/*"
     ],
     "win": {
-      "target": "portable"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
     },
     "mac": {
-      "target": "zip"
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "category": "public.app-category.utilities"
+    },
+    "dmg": {
+      "writeUpdateInfo": true
     },
     "linux": {
-      "target": "AppImage"
+      "target": [
+        "AppImage"
+      ],
+      "category": "Utility"
     }
   },
   "dependencies": {
+    "electron-updater": "^6.7.3",
     "lucide-react": "^0.263.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
