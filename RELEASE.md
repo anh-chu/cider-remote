@@ -5,117 +5,74 @@ This document describes how to create and publish new releases of Cider Remote w
 ## Prerequisites
 
 - Write access to the GitHub repository
-- GitHub Personal Access Token (for automated publishing)
-- All platforms you want to build for (or use CI/CD)
+- Ability to push tags to GitHub
 
 ## Release Process
 
-### Option 1: Manual Release (Recommended for first-time)
+### Automated Release via GitHub Actions (Recommended)
 
-#### 1. Update Version Number
+This is the standard workflow for creating releases. Each tag automatically builds and publishes to GitHub Releases.
 
-```bash
-# Patch version (1.0.0 -> 1.0.1)
-npm version patch
-
-# Minor version (1.0.0 -> 1.1.0)
-npm version minor
-
-# Major version (1.0.0 -> 2.0.0)
-npm version major
-```
-
-This automatically:
-- Updates `package.json`
-- Creates a git commit
-- Creates a git tag
-
-#### 2. Build Distributables
-
-Build for your target platforms:
+#### 1. Update Version and Create Tag
 
 ```bash
-# Windows (NSIS Installer)
-npm run electron:build-win
+# Update version in package.json (use x.y format)
+# Edit package.json manually: "version": "0.4"
 
-# macOS (DMG + ZIP for both architectures)
-npm run electron:build-mac
-
-# Linux (AppImage)
-# Note: Requires Linux environment
-npm run build && electron-builder --linux
+# Create and push tag
+git add package.json
+git commit -m "Bump version to 0.4"
+git tag v0.4
+git push && git push --tags
 ```
 
-Artifacts will be in the `dist_electron/` directory.
+#### 2. Automatic Build and Publish
 
-#### 3. Create GitHub Release
+Once you push the tag:
+1. GitHub Actions automatically triggers
+2. Builds Windows (NSIS) and macOS (DMG + ZIP) versions
+3. Publishes directly to GitHub Releases with all necessary files
+4. Release notes are auto-generated
 
-1. Go to https://github.com/anh-chu/cider-remote/releases
-2. Click "Draft a new release"
-3. Choose the tag created by `npm version` (e.g., `v1.0.1`)
-4. Fill in release title and description
-5. Upload **ALL** files from `dist_electron/`:
-   - `*.exe` (Windows NSIS installer)
-   - `*.dmg` (macOS disk image)
-   - `*.zip` (macOS zip - required for auto-updates)
-   - `*.AppImage` (Linux)
-   - `latest.yml` (Windows update metadata)
-   - `latest-mac.yml` (macOS update metadata)
-   - `latest-linux.yml` (Linux update metadata)
-6. Click "Publish release"
-
-#### 4. Verify Auto-Update
+#### 3. Verify Auto-Update
 
 Install the previous version and verify that:
-1. The app checks for updates on startup
-2. Update notification appears
-3. Download works
+1. The app checks for updates on startup (after 3 seconds)
+2. Update notification appears in bottom-right corner
+3. Download works and shows progress
 4. Install & restart works
 
-### Option 2: Automated Release with GitHub Token
+**Note:** You can manually trigger an update check using the floating refresh button in the bottom-right corner.
 
-#### 1. Set Up GitHub Token
+### Manual Local Build (For Testing)
 
-Create a GitHub Personal Access Token with `repo` scope:
-1. Go to GitHub Settings > Developer settings > Personal access tokens
-2. Generate new token (classic)
-3. Select `repo` scope
-4. Copy the token
-
-#### 2. Configure Token
+If you need to build locally without publishing to GitHub:
 
 ```bash
-# Export token for current session
-export GH_TOKEN="your_github_token_here"
-
-# Or add to ~/.bashrc or ~/.zshrc for persistence
-echo 'export GH_TOKEN="your_github_token_here"' >> ~/.bashrc
+# Build for testing (does not publish)
+npm run electron:build-win
+npm run electron:build-mac
 ```
 
-#### 3. Build and Publish
-
-```bash
-# Update version
-npm version patch
-
-# Build and publish in one command
-npm run electron:build-win -- --publish always
-npm run electron:build-mac -- --publish always
-```
-
-This automatically:
-- Builds the distributables
-- Creates a GitHub Release with the git tag
-- Uploads all artifacts
-- Publishes the release
+Artifacts will be in `dist_electron/` directory.
 
 ## Version Strategy
 
-Follow [Semantic Versioning](https://semver.org/):
+This project uses a simple x.y versioning scheme:
 
-- **Patch** (1.0.0 -> 1.0.1): Bug fixes, minor improvements
-- **Minor** (1.0.0 -> 1.1.0): New features, backward compatible
-- **Major** (1.0.0 -> 2.0.0): Breaking changes
+- **0.3** → **0.4**: Minor version bump for new features/fixes
+- **0.9** → **1.0**: Major milestone
+- **1.0** → **1.1**: Continue incrementing
+
+**Current Version:** 0.3
+
+### Creating a New Version
+
+1. Edit `package.json` and update the `"version"` field (e.g., `"0.3"` → `"0.4"`)
+2. Commit: `git commit -am "Bump version to 0.4"`
+3. Tag: `git tag v0.4`
+4. Push: `git push && git push --tags`
+5. GitHub Actions handles the rest
 
 ## Release Notes Template
 
@@ -129,86 +86,39 @@ Follow [Semantic Versioning](https://semver.org/):
 ## Installation
 
 Download the appropriate file for your platform:
-- Windows: `Cider-Remote-Setup-X.X.X.exe`
-- macOS: `Cider-Remote-X.X.X.dmg` or `Cider-Remote-X.X.X-mac.zip`
-- Linux: `Cider-Remote-X.X.X.AppImage`
+- Windows: `Cider-Remote-Setup-X.X.exe`
+- macOS: `Cider-Remote-X.X.dmg`
 
 ## Auto-Update
 
 If you already have Cider Remote installed, the app will automatically notify you of this update.
 ```
 
+## How It Works
+
+### GitHub Actions Workflow
+
+The `.github/workflows/build-electron.yml` workflow:
+
+1. **Triggers** on any tag push matching `v*` (e.g., `v0.4`, `v1.0`)
+2. **Builds** on both macOS and Windows runners in parallel
+3. **Publishes** directly to GitHub Releases using `--publish always`
+4. **Uploads** all necessary files:
+   - Windows: NSIS installer, blockmap, `latest.yml`
+   - macOS: DMG, ZIP, `latest-mac.yml`
+
+The workflow uses `GITHUB_TOKEN` which is automatically available in GitHub Actions.
+
 ## Troubleshooting
 
 ### Update Not Detected
 
-1. Verify `latest.yml` / `latest-mac.yml` is uploaded to the release
-2. Check that the version in `package.json` is higher than installed version
+1. Verify `latest.yml` / `latest-mac.yml` is in the GitHub Release
+2. Check that the version in the release is higher than installed version
 3. Ensure the release is marked as "Latest" (not pre-release)
 
-### Build Fails
+### Build Fails on GitHub Actions
 
-1. Clean build directories: `rm -rf dist dist_electron`
-2. Reinstall dependencies: `npm install`
-3. Try building again
-
-### Code Signing (macOS)
-
-For production releases, sign the macOS app:
-
-```bash
-# Set up Apple Developer certificates
-export APPLE_ID="your@email.com"
-export APPLE_ID_PASSWORD="app-specific-password"
-export TEAM_ID="your-team-id"
-
-# Build with signing
-npm run electron:build-mac
-```
-
-Add to `package.json` build config:
-```json
-"mac": {
-  "hardenedRuntime": true,
-  "gatekeeperAssess": false,
-  "entitlements": "build/entitlements.mac.plist",
-  "entitlementsInherit": "build/entitlements.mac.plist"
-}
-```
-
-## CI/CD Integration
-
-For automated releases on every tag push, create `.github/workflows/release.yml`:
-
-```yaml
-name: Release
-
-on:
-  push:
-    tags:
-      - 'v*'
-
-jobs:
-  release:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
-
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
-        with:
-          node-version: 18
-
-      - run: npm install
-
-      - name: Build and Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          npm run build
-          npx electron-builder --publish always
-```
-
-This automatically builds and publishes releases for all platforms when you push a tag.
+1. Check the Actions logs for specific errors
+2. Verify the tag format is `vX.Y` (e.g., `v0.4`)
+3. Ensure `package.json` version matches the tag (without the `v` prefix)

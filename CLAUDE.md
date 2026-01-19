@@ -24,9 +24,13 @@ npm run electron:dev
 # Build for production
 npm run build
 
-# Build Electron apps
-npm run electron:build-mac    # macOS (outputs zip)
-npm run electron:build-win    # Windows (outputs portable exe)
+# Build Electron apps (local build without publishing)
+npm run electron:build-mac    # macOS (outputs dmg + zip)
+npm run electron:build-win    # Windows (outputs NSIS installer)
+
+# Build and publish to GitHub Releases (requires GH_TOKEN)
+npm run electron:publish-mac
+npm run electron:publish-win
 
 # Linting
 npm run lint
@@ -186,57 +190,33 @@ The Electron app includes automatic update functionality powered by `electron-up
 Auto-updates require specific build targets:
 - **Windows**: NSIS installer (not portable.exe)
 - **macOS**: DMG + ZIP (supports both Intel and Apple Silicon)
-- **Linux**: AppImage
 
 ### Publishing Releases
 
-To publish a new release with auto-update support:
+Releases are automatically published via GitHub Actions:
 
-1. **Update Version**: Bump version in `package.json`
+1. **Update Version**: Edit `package.json` and change version (e.g., `"0.3"` → `"0.4"`)
+
+2. **Tag and Push**:
    ```bash
-   npm version patch  # or minor/major
+   git commit -am "Bump version to 0.4"
+   git tag v0.4
+   git push && git push --tags
    ```
 
-2. **Build Distributables**:
-   ```bash
-   npm run electron:build-win  # Windows NSIS installer
-   npm run electron:build-mac  # macOS DMG + ZIP
-   ```
-
-3. **Create GitHub Release**:
-   - Go to GitHub Releases
-   - Create a new release with a git tag (e.g., `v1.0.1`)
-   - Upload all build artifacts from `dist_electron/`:
-     - Windows: `*.exe` (NSIS installer)
-     - macOS: `*.dmg` and `*.zip`
-     - Linux: `*.AppImage`
-   - Include `latest.yml` (Windows), `latest-mac.yml` (macOS), and `latest-linux.yml` (Linux)
-
-4. **Publish**: Once published, existing app installations will detect the update
-
-### Auto-Publish with electron-builder
-
-For automated publishing (requires GitHub token):
-
-```bash
-# Set GitHub token
-export GH_TOKEN="your_github_token"
-
-# Build and publish
-npm run electron:build-mac -- --publish always
-npm run electron:build-win -- --publish always
-```
-
-The `--publish always` flag automatically creates a GitHub Release and uploads artifacts.
+3. **Automatic Build**: GitHub Actions automatically:
+   - Builds Windows NSIS installer and macOS DMG/ZIP
+   - Publishes to GitHub Releases with all update metadata files
+   - Existing installations will detect the update automatically
 
 ### Testing Updates
 
 Auto-updates only work in packaged production builds, not in development mode. To test:
 
-1. Build and install version 1.0.0
-2. Bump to version 1.0.1 and build
-3. Create a GitHub Release with the 1.0.1 artifacts
-4. Run the installed 1.0.0 app - it should detect the update
+1. Build and install version 0.3
+2. Bump to version 0.4, tag, and push
+3. GitHub Actions builds and publishes the release
+4. Run the installed 0.3 app - it should detect the update after 3 seconds
 
 ### Update Channels
 

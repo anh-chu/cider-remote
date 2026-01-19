@@ -1,7 +1,7 @@
 {
   "name": "cider-remote",
   "private": true,
-  "version": "1.0.0",
+  "version": "0.3",
   "description": "Cider Remote Client",
   "author": "Anh Chu",
   "type": "module",
@@ -12,8 +12,10 @@
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "electron:dev": "concurrently \"cross-env BROWSER=none bun dev\" \"wait-on http://localhost:5173 && cross-env ELECTRON_START_URL=http://localhost:5173 electron .\"",
-    "electron:build-mac": "vite build && electron-builder --mac",
-    "electron:build-win": "vite build && electron-builder --win"
+    "electron:build-mac": "vite build && electron-builder --mac --publish never",
+    "electron:build-win": "vite build && electron-builder --win --publish never",
+    "electron:publish-mac": "vite build && electron-builder --mac --publish always",
+    "electron:publish-win": "vite build && electron-builder --win --publish always"
   },
   "build": {
     "appId": "sh.cider.remote",
