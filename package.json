@@ -21,7 +21,11 @@
     "appId": "sh.cider.remote",
     "productName": "Cider Remote",
     "npmRebuild": false,
-    "publish": null,
+    "publish": {
+      "provider": "github",
+      "owner": "anh-chu",
+      "repo": "cider-remote"
+    },
     "directories": {
       "output": "dist_electron"
     },
@@ -42,7 +46,8 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "writeUpdateInfo": true
     },
     "mac": {
       "target": [
