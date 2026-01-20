@@ -51,7 +51,7 @@ export default function ListenTogether({
     const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
     const [activeTab, setActiveTab] = useState('queue'); // [NEW] Added for Tabs UI
 
-    // [DEBUG] Debug mode state
+    // [DEBUG] Compact debug logging - only seeks and periodic summaries
     const [debugMode, setDebugMode] = useState(() => {
         try {
             return localStorage.getItem('cider_debug_mode') === 'true';
@@ -59,34 +59,49 @@ export default function ListenTogether({
             return false;
         }
     });
-    const debugModeRef = useRef(debugMode); // Ref for use in closures
-    debugModeRef.current = debugMode; // Keep ref in sync with state
-    const debugLogsRef = useRef([]);
-    const MAX_DEBUG_LOGS = 1000; // Keep last 1000 entries
+    const debugModeRef = useRef(debugMode);
+    debugModeRef.current = debugMode;
+    const debugStatsRef = useRef({ seeks: [], drifts: [], lastSummary: 0 });
 
-    const debugLog = (category, data) => {
+    // Compact single-line log for seeks only
+    const logSeek = (from, to, diff, reason) => {
         if (!debugModeRef.current) return;
-        const entry = {
-            time: Date.now(),
-            timeISO: new Date().toISOString(),
-            category,
-            ...data
-        };
-        debugLogsRef.current.push(entry);
-        // Trim if too large
-        if (debugLogsRef.current.length > MAX_DEBUG_LOGS) {
-            debugLogsRef.current = debugLogsRef.current.slice(-MAX_DEBUG_LOGS);
+        const stats = debugStatsRef.current;
+        const entry = { t: Date.now(), from, to, diff, reason };
+        stats.seeks.push(entry);
+        if (stats.seeks.length > 100) stats.seeks.shift();
+        console.log(`[SEEK] ${from.toFixed(1)}→${to.toFixed(1)} (Δ${diff.toFixed(2)}s) ${reason}`);
+    };
+
+    // Track drift samples for summary
+    const trackDrift = (diff) => {
+        if (!debugModeRef.current) return;
+        const stats = debugStatsRef.current;
+        stats.drifts.push(diff);
+        if (stats.drifts.length > 50) stats.drifts.shift();
+
+        // Log summary every 5 seconds
+        const now = Date.now();
+        if (now - stats.lastSummary > 5000 && stats.drifts.length > 0) {
+            stats.lastSummary = now;
+            const avg = stats.drifts.reduce((a, b) => a + b, 0) / stats.drifts.length;
+            const max = Math.max(...stats.drifts);
+            const seekCount = stats.seeks.filter(s => s.t > now - 5000).length;
+            console.log(`[SYNC] avg=${avg.toFixed(2)}s max=${max.toFixed(2)}s seeks=${seekCount}/5s`);
         }
-        console.log(`[DEBUG:${category}]`, data);
     };
 
     const exportDebugLogs = () => {
-        const logs = debugLogsRef.current;
-        const blob = new Blob([JSON.stringify(logs, null, 2)], { type: 'application/json' });
+        const data = {
+            exported: new Date().toISOString(),
+            seeks: debugStatsRef.current.seeks,
+            recentDrifts: debugStatsRef.current.drifts
+        };
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `cider-sync-debug-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+        a.download = `sync-debug-${Date.now()}.json`;
         a.click();
         URL.revokeObjectURL(url);
     };
@@ -96,14 +111,12 @@ export default function ListenTogether({
         setDebugMode(newValue);
         try {
             localStorage.setItem('cider_debug_mode', newValue.toString());
-        } catch (e) {
-            console.error('Failed to save debug mode:', e);
-        }
+        } catch (e) {}
         if (newValue) {
-            debugLogsRef.current = []; // Clear logs when enabling
-            console.log('[DEBUG] Debug mode enabled - logs will be collected');
+            debugStatsRef.current = { seeks: [], drifts: [], lastSummary: 0 };
+            console.log('[DEBUG] ON - tracking seeks and drift');
         } else {
-            console.log('[DEBUG] Debug mode disabled');
+            console.log('[DEBUG] OFF');
         }
     };
 
@@ -142,8 +155,6 @@ export default function ListenTogether({
                 const medianOffset = sortedOffsets[Math.floor(sortedOffsets.length / 2)];
                 const medianRtt = sortedRtts[Math.floor(sortedRtts.length / 2)];
 
-                const prevOffset = clockOffset;
-                const prevRtt = rtt;
                 setClockOffset(medianOffset);
                 setRtt(medianRtt);
                 clockSyncSamplesRef.current = samples;
@@ -152,17 +163,6 @@ export default function ListenTogether({
                 s.emit('time_sync_report', { offset: medianOffset, rtt: medianRtt });
 
                 console.log(`Clock sync complete: offset=${medianOffset}ms, rtt=${medianRtt}ms`);
-
-                // [DEBUG] Log clock sync results with change from previous
-                debugLog('CLOCK_SYNC', {
-                    samples: samples.map(s => ({ offset: s.offset, rtt: s.rtt })),
-                    medianOffset,
-                    medianRtt,
-                    prevOffset,
-                    prevRtt,
-                    offsetChange: medianOffset - prevOffset,
-                    rttChange: medianRtt - prevRtt
-                });
 
                 // Remove listener after sync is complete
                 s.off('time_sync_response', handleResponse);
@@ -223,26 +223,10 @@ export default function ListenTogether({
                 console.log("📥 Slave: Received Sync State. Queue Len:", q.length, "Source:", state.source, "Seq:", state.playback?.seq);
                 console.log("📥 Slave: Received Song:", state.playback?.currentSong?.name, "| ID:", state.playback?.currentSong?.id, "| playParams.id:", state.playback?.currentSong?.playParams?.id);
 
-                // [DEBUG] Log incoming sync state
-                debugLog('SYNC_STATE_RECEIVED', {
-                    source: state.source,
-                    seq: state.playback?.seq,
-                    masterEpoch: state.masterEpoch,
-                    serverTime: state.serverTime,
-                    playback: state.playback ? {
-                        isPlaying: state.playback.isPlaying,
-                        timestamp: state.playback.timestamp,
-                        lastUpdated: state.playback.lastUpdated,
-                        lastSeekTimestamp: state.playback.lastSeekTimestamp,
-                        currentSong: state.playback.currentSong?.name
-                    } : null
-                });
-
                 // [NEW] Check sequence number - reject out-of-order updates
                 const incomingSeq = state.playback?.seq || 0;
                 if (incomingSeq > 0 && incomingSeq <= lastSeqRef.current) {
                     console.log(`Rejecting out-of-order sync_state (seq ${incomingSeq} <= ${lastSeqRef.current})`);
-                    debugLog('SYNC_STATE_REJECTED', { reason: 'out-of-order', incomingSeq, lastSeq: lastSeqRef.current });
                     return;
                 }
                 lastSeqRef.current = incomingSeq;
@@ -536,25 +520,8 @@ export default function ListenTogether({
             const isTransitioning = lastSongSync.current.id && (Date.now() - lastSongSync.current.time) < 5000;
             const effectiveThreshold = isTransitioning ? HARD_THRESHOLD * 2 : SOFT_THRESHOLD;
 
-            // [DEBUG] Log every sync calculation
-            debugLog('SYNC_CALC', {
-                masterTimestamp: timestamp,
-                serverTimestamp,
-                localReceivedTime,
-                lastUpdated,
-                localNow,
-                clockOffset,
-                rtt,
-                elapsedSinceUpdate: elapsedSinceUpdate.toFixed(3),
-                latencyCompensation: latencyCompensation.toFixed(3),
-                expectedPosition: expectedPosition.toFixed(3),
-                localTime: localTime.toFixed(3),
-                diff: diff.toFixed(3),
-                direction,
-                isNewSeek,
-                isTransitioning,
-                effectiveThreshold
-            });
+            // [DEBUG] Track drift for summary (compact logging)
+            trackDrift(diff);
 
             // [NEW] Smarter sync logic
             if (isNewSeek || diff > effectiveThreshold) {
@@ -571,30 +538,14 @@ export default function ListenTogether({
                 const willSeek = (timeSinceLastSeek > seekThrottle) || isNewSeek;
                 const passesJitterThreshold = diff > JITTER_THRESHOLD || isNewSeek;
 
-                // [DEBUG] Log seek decision
-                debugLog('SEEK_DECISION', {
-                    diff: diff.toFixed(3),
-                    direction,
-                    effectiveThreshold,
-                    timeSinceLastSeek,
-                    seekThrottle,
-                    willSeek,
-                    passesJitterThreshold,
-                    finalDecision: willSeek && passesJitterThreshold ? 'SEEK' : 'SKIP'
-                });
-
                 if (willSeek) {
                     lastSeekSync.current = now;
 
                     // Only seek if drift exceeds jitter threshold (skip micro-corrections)
                     if (passesJitterThreshold) {
-                        // [DEBUG] Log actual seek
-                        debugLog('SEEK_EXECUTE', {
-                            from: localTime.toFixed(3),
-                            to: expectedPosition.toFixed(3),
-                            diff: diff.toFixed(3),
-                            direction
-                        });
+                        // [DEBUG] Compact seek logging
+                        const reason = isNewSeek ? 'master-seek' : (isTransitioning ? 'transition' : 'drift');
+                        logSeek(localTime, expectedPosition, diff, reason);
                         onRemoteAction('seek', expectedPosition);
                     }
                 }
