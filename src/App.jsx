@@ -556,12 +556,16 @@ export default function App() {
 
   if (showSettings || status === 'disconnected') {
     return (
-      <div className="min-h-screen bg-neutral-900 text-white flex items-center justify-center p-4 font-sans">
-        <Card className="w-full max-w-md">
-          <div className="flex items-center gap-3 mb-6 border-b border-white/10 pb-4" style={{ WebkitAppRegion: 'drag' }}>
-            <Settings className="text-red-500" />
-            <h2 className="text-2xl font-bold">Cider Remote Setup</h2>
-          </div>
+      <div className="min-h-screen bg-neutral-900 text-white flex flex-col font-sans">
+        {/* Draggable Title Bar - Full width at top */}
+        <div className="w-full h-12 flex-shrink-0" style={{ WebkitAppRegion: 'drag' }} />
+
+        <div className="flex items-center justify-center p-4 flex-1">
+          <Card className="w-full max-w-md">
+            <div className="flex items-center gap-3 mb-6 border-b border-white/10 pb-4">
+              <Settings className="text-red-500" />
+              <h2 className="text-2xl font-bold">Cider Remote Setup</h2>
+            </div>
 
           <form onSubmit={saveConfig} className="space-y-4">
             <div>
@@ -612,37 +616,43 @@ export default function App() {
             </div>
           </form>
         </Card>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-neutral-900 to-black text-white flex items-center justify-center p-4 font-sans selection:bg-red-500/30">
+    <div className="min-h-screen bg-gradient-to-br from-neutral-900 to-black text-white flex flex-col font-sans selection:bg-red-500/30">
 
-      {/* Background Ambience */}
-      {nowPlaying?.artwork?.url && (
-        <div
-          className="fixed inset-0 opacity-20 blur-3xl pointer-events-none z-0 scale-150 transition-all duration-1000 ease-in-out"
-          style={{ backgroundImage: `url(${getArtworkUrl(nowPlaying.artwork.url)})`, backgroundSize: 'cover', backgroundPosition: 'center' }}
-        />
-      )}
+      {/* Draggable Title Bar - Full width at top */}
+      <div className="w-full h-12 flex-shrink-0" style={{ WebkitAppRegion: 'drag' }} />
 
-      <div className="w-full max-w-md z-10 relative">
+      {/* Main content area - centered */}
+      <div className="flex items-center justify-center p-4 flex-1">
+        {/* Background Ambience */}
+        {nowPlaying?.artwork?.url && (
+          <div
+            className="fixed inset-0 opacity-20 blur-3xl pointer-events-none z-0 scale-150 transition-all duration-1000 ease-in-out"
+            style={{ backgroundImage: `url(${getArtworkUrl(nowPlaying.artwork.url)})`, backgroundSize: 'cover', backgroundPosition: 'center' }}
+          />
+        )}
 
-        {/* Header */}
-        <div className="flex justify-between items-center mb-6 px-2" style={{ WebkitAppRegion: 'drag' }}>
-          <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full transition-colors duration-500 ${status === 'connected' ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' :
-              'bg-red-500 animate-pulse'
-              }`} />
-            <span className="text-xs font-medium uppercase tracking-wider text-white/50">
-              {status === 'connected' ? 'Cider Connected' : 'Disconnected'}
-            </span>
+        <div className="w-full max-w-md z-10 relative">
+
+          {/* Header */}
+          <div className="flex justify-between items-center mb-6 px-2">
+            <div className="flex items-center gap-2">
+              <div className={`w-2 h-2 rounded-full transition-colors duration-500 ${status === 'connected' ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' :
+                'bg-red-500 animate-pulse'
+                }`} />
+              <span className="text-xs font-medium uppercase tracking-wider text-white/50">
+                {status === 'connected' ? 'Cider Connected' : 'Disconnected'}
+              </span>
+            </div>
+            <button onClick={() => setShowSettings(true)} className="text-white/40 hover:text-white transition-colors">
+              <Settings size={20} />
+            </button>
           </div>
-          <button onClick={() => setShowSettings(true)} className="text-white/40 hover:text-white transition-colors" style={{ WebkitAppRegion: 'no-drag' }}>
-            <Settings size={20} />
-          </button>
-        </div>
 
         {/* Error Banner (Stopped State) */}
         {status === 'error_stopped' && (
@@ -789,6 +799,7 @@ export default function App() {
         {/* Auto-Update Notification */}
         <UpdateNotification />
       </div>
-    </div >
+      </div>
+    </div>
   );
 }

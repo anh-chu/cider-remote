@@ -16,24 +16,24 @@ Cider Remote is a remote control application for the Cider Apple Music client. I
 
 ```bash
 # Development (web only)
-npm run dev  # or: bun dev
+pnpm run dev  # or: bun dev
 
 # Development with Electron
-npm run electron:dev
+pnpm run electron:dev
 
 # Build for production
-npm run build
+pnpm run build
 
 # Build Electron apps (local build without publishing)
-npm run electron:build-mac    # macOS (outputs dmg + zip)
-npm run electron:build-win    # Windows (outputs NSIS installer)
+pnpm run electron:build-mac    # macOS (outputs dmg + zip)
+pnpm run electron:build-win    # Windows (outputs NSIS installer)
 
 # Build and publish to GitHub Releases (requires GH_TOKEN)
-npm run electron:publish-mac
-npm run electron:publish-win
+pnpm run electron:publish-mac
+pnpm run electron:publish-win
 
 # Linting
-npm run lint
+pnpm run lint
 ```
 
 ### Server (Coordinator)
@@ -42,10 +42,10 @@ npm run lint
 cd server
 
 # Production
-npm start
+pnpm start
 
 # Development (with auto-reload)
-npm run dev
+pnpm run dev
 
 # Docker deployment
 docker build -t cider-remote-server .

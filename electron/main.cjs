@@ -19,7 +19,8 @@ function createWindow() {
             webSecurity: false // ALLOW MIXED CONTENT (HTTP localhost from HTTPS context if applicable)
         },
         autoHideMenuBar: true,
-        titleBarStyle: 'hidden', // Modern look
+        frame: false, // Enable custom frame for dragging support
+        titleBarStyle: 'hiddenInset', // Works with frame: false
         titleBarOverlay: {
             color: '#171717',
             symbolColor: '#ffffff'
