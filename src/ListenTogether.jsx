@@ -34,6 +34,7 @@ export default function ListenTogether({
 
     const [serverState, setServerState] = useState(null);
     const [error, setError] = useState('');
+    const [serverConnectionStatus, setServerConnectionStatus] = useState('disconnected'); // 'disconnected', 'connecting', 'connected', 'error'
 
     // [NEW] Clock Sync State
     const [clockOffset, setClockOffset] = useState(0); // Estimated offset between local and server time (ms)
@@ -121,13 +122,31 @@ export default function ListenTogether({
 
     const connect = async () => {
         try {
+            setServerConnectionStatus('connecting');
             const s = io(serverUrl);
 
             s.on('connect', () => {
                 console.log('Connected to Coordinator');
                 setError('');
+                setServerConnectionStatus('connected');
                 // [NEW] Perform initial clock sync on connection
                 performClockSync(s);
+            });
+
+            s.on('connect_error', (error) => {
+                console.error('Connection error:', error);
+                setServerConnectionStatus('error');
+                setError(`Server error: ${error.message || 'Connection failed'}`);
+            });
+
+            s.on('disconnect', (reason) => {
+                console.log('Disconnected from Coordinator:', reason);
+                setServerConnectionStatus('disconnected');
+                if (reason === 'io server disconnect') {
+                    setError('Server disconnected');
+                } else if (reason === 'transport close') {
+                    setError('Connection lost');
+                }
             });
 
             s.on('sync_state', (state) => {
@@ -212,6 +231,7 @@ export default function ListenTogether({
 
             setSocket(s);
         } catch (e) {
+            setServerConnectionStatus('error');
             setError("Socket.io-client not installed or server down");
         }
     };
@@ -672,6 +692,22 @@ export default function ListenTogether({
         };
     }, [socket, joinedRoom, masterId, ciderState.lastSeekTimestamp]); // [Fix] Restart poll immediately on seek (Use Value not Ref)
 
+    // Get status display info
+    const getStatusDisplay = () => {
+        switch (serverConnectionStatus) {
+            case 'connected':
+                return { text: 'Remote Server Connected', bgColor: 'bg-green-500', textColor: 'text-green-400', pulse: true };
+            case 'connecting':
+                return { text: 'Remote Server Connecting...', bgColor: 'bg-yellow-500', textColor: 'text-yellow-400', pulse: true };
+            case 'disconnected':
+                return { text: 'Remote Server Disconnected', bgColor: 'bg-red-500', textColor: 'text-red-400', pulse: false };
+            case 'error':
+                return { text: 'Remote Server Error', bgColor: 'bg-orange-500', textColor: 'text-orange-400', pulse: true };
+            default:
+                return { text: 'Remote Server Disconnected', bgColor: 'bg-red-500', textColor: 'text-red-400', pulse: false };
+        }
+    };
+
     // Register Remote Controls
     useEffect(() => {
         const isMasterMode = socket && socket.id === masterId && serverState?.source === 'master';
@@ -704,6 +740,19 @@ export default function ListenTogether({
                 <div className="flex items-center gap-2 text-purple-400">
                     <Users size={20} />
                     <h3 className="font-bold">Listen Together</h3>
+                    {!joinedRoom && (
+                        <div className="flex items-center gap-1 ml-2 px-2 py-0.5 rounded-full bg-white/5 border border-white/10">
+                            {(() => {
+                                const status = getStatusDisplay();
+                                return (
+                                    <>
+                                        <div className={`w-1.5 h-1.5 rounded-full ${status.bgColor} ${status.pulse ? 'animate-pulse' : ''}`} />
+                                        <span className={`text-[10px] ${status.textColor} font-medium`}>{status.text}</span>
+                                    </>
+                                );
+                            })()}
+                        </div>
+                    )}
                 </div>
 
                 {!joinedRoom ? (
@@ -785,6 +834,18 @@ export default function ListenTogether({
                                     {users.length} {users.length === 1 ? 'person' : 'people'}
                                 </span>
                             </div>
+                            <span className="w-px h-3 bg-white/10 mx-1"></span>
+                            <div className="flex items-center gap-1">
+                                {(() => {
+                                    const status = getStatusDisplay();
+                                    return (
+                                        <>
+                                            <div className={`w-1 h-1 rounded-full ${status.bgColor} ${status.pulse ? 'animate-pulse' : ''}`} />
+                                            <span className={`text-[10px] ${status.textColor} uppercase tracking-wider font-bold`}>{status.text}</span>
+                                        </>
+                                    );
+                                })()}
+                            </div>
                         </div>
                         <button onClick={() => {
                             if (socket) {
@@ -798,6 +859,7 @@ export default function ListenTogether({
                             setServerState(null);
                             setUsers([]);
                             setError('');
+                            setServerConnectionStatus(socket && socket.connected ? 'connected' : 'disconnected');
                             // [NEW] Reset sync state on leave
                             lastSeqRef.current = 0;
                             masterEpochRef.current = 0;

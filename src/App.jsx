@@ -710,12 +710,32 @@ export default function App() {
           {/* Header */}
           <div className="flex justify-between items-center mb-6 px-2">
             <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full transition-colors duration-500 ${status === 'connected' ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' :
-                'bg-red-500 animate-pulse'
-                }`} />
-              <span className="text-xs font-medium uppercase tracking-wider text-white/50">
-                {status === 'connected' ? 'Cider Connected' : 'Disconnected'}
-              </span>
+              {(() => {
+                const getStatusDisplay = () => {
+                  switch (status) {
+                    case 'connected':
+                      return { text: 'Cider Connected', bgColor: 'bg-green-500 shadow-[0_0_10px_#22c55e]', textColor: 'text-green-400', pulse: false };
+                    case 'connecting':
+                      return { text: 'Cider Connecting...', bgColor: 'bg-yellow-500', textColor: 'text-yellow-400', pulse: true };
+                    case 'disconnected':
+                      return { text: 'Cider Disconnected', bgColor: 'bg-red-500', textColor: 'text-red-400', pulse: true };
+                    case 'error':
+                    case 'error_stopped':
+                      return { text: 'Connection Error to Cider', bgColor: 'bg-orange-500', textColor: 'text-orange-400', pulse: true };
+                    default:
+                      return { text: 'Cider Disconnected', bgColor: 'bg-red-500', textColor: 'text-red-400', pulse: true };
+                  }
+                };
+                const displayStatus = getStatusDisplay();
+                return (
+                  <>
+                    <div className={`w-2 h-2 rounded-full transition-colors duration-500 ${displayStatus.bgColor} ${displayStatus.pulse ? 'animate-pulse' : ''}`} />
+                    <span className={`text-xs font-medium uppercase tracking-wider ${displayStatus.textColor}`}>
+                      {displayStatus.text}
+                    </span>
+                  </>
+                );
+              })()}
             </div>
             <button onClick={() => setShowSettings(true)} className="text-white/40 hover:text-white transition-colors">
               <Settings size={20} />
