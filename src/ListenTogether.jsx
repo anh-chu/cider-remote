@@ -187,6 +187,15 @@ export default function ListenTogether({
                 setServerState(pb);
             });
 
+            s.on('master_paused', async () => {
+                console.log('Master disconnected: pausing music for all users');
+                try {
+                    await onRemoteAction('pause');
+                } catch (e) {
+                    console.error('Failed to pause on master disconnect:', e);
+                }
+            });
+
             setSocket(s);
         } catch (e) {
             setError("Socket.io-client not installed or server down");

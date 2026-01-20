@@ -231,39 +231,22 @@ io.on('connection', (socket) => {
                 room.masterId = room.users[0].id;
                 room.masterEpoch += 1; // [NEW] Increment epoch on master reassignment
                 console.log(`Room ${roomId}: Master reassigned to ${room.masterId} (epoch: ${room.masterEpoch})`);
+
+                // Pause music for all remaining users when master leaves
+                io.to(roomId).emit('master_paused');
             } else {
-                // Reset state only if room is empty
-                room.queue = [];
-                room.playback = {
-                    isPlaying: false,
-                    currentSong: null,
-                    timestamp: 0,
-                    lastUpdated: Date.now(),
-                    source: 'master',
-                    seq: 0,
-                    lastSeekTimestamp: 0
-                };
-                room.masterEpoch = 0; // Reset epoch when room is empty
-                console.log(`Room ${roomId}: Master left. Room empty. Resetting room state.`);
+                // Room is empty, destroy it
+                delete rooms[roomId];
+                console.log(`Room ${roomId}: Master left. Room destroyed (empty).`);
             }
         }
 
-        // Notify remaining users
-        io.to(roomId).emit('users_update', room.users);
-        io.to(roomId).emit('master_update', {
-            masterId: room.masterId,
-            masterEpoch: room.masterEpoch
-        });
-        // If master left, sync empty state
-        if (!room.masterId) {
-            io.to(roomId).emit('sync_state', {
-                queue: room.queue,
-                history: room.history,
-                playback: room.playback,
-                users: room.users,
+        // Notify remaining users only if room still exists
+        if (rooms[roomId]) {
+            io.to(roomId).emit('users_update', room.users);
+            io.to(roomId).emit('master_update', {
                 masterId: room.masterId,
-                masterEpoch: room.masterEpoch,
-                serverTime: Date.now()
+                masterEpoch: room.masterEpoch
             });
         }
     });
@@ -286,17 +269,27 @@ io.on('connection', (socket) => {
                     if (room.users.length > 0) {
                         room.masterId = room.users[0].id;
                         room.masterEpoch += 1; // [NEW] Increment epoch on master reassignment
+
+                        // Pause music for all remaining users when master disconnects
+                        io.to(roomId).emit('master_paused');
+                        io.to(roomId).emit('master_update', {
+                            masterId: room.masterId,
+                            masterEpoch: room.masterEpoch
+                        });
                     } else {
-                        room.masterId = null;
-                        room.masterEpoch = 0; // Reset epoch when room is empty
+                        // Room is empty, destroy it
+                        delete rooms[roomId];
+                        console.log(`Room ${roomId}: Last user disconnected. Room destroyed.`);
                     }
-                    io.to(roomId).emit('master_update', {
-                        masterId: room.masterId,
-                        masterEpoch: room.masterEpoch
-                    });
+                } else if (room.users.length === 0) {
+                    // Non-master user left and room is now empty
+                    delete rooms[roomId];
+                    console.log(`Room ${roomId}: Last user left. Room destroyed.`);
+                } else {
+                    // Room still has users
+                    io.to(roomId).emit('users_update', room.users);
                 }
 
-                io.to(roomId).emit('users_update', room.users);
                 console.log(`User removed from room ${roomId} (epoch: ${room.masterEpoch})`);
                 break;
             }
