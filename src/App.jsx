@@ -557,8 +557,11 @@ export default function App() {
   if (showSettings || status === 'disconnected') {
     return (
       <div className="min-h-screen bg-neutral-900 text-white flex flex-col font-sans">
-        {/* Draggable Title Bar - Full width at top */}
-        <div className="w-full h-12 flex-shrink-0" style={{ WebkitAppRegion: 'drag' }} />
+        {/* Draggable Title Bar - Leave space for window controls on right */}
+        <div className="w-full h-12 flex-shrink-0 flex" style={{ WebkitAppRegion: 'drag' }}>
+          <div className="flex-1" style={{ WebkitAppRegion: 'drag' }} />
+          <div className="w-32" style={{ WebkitAppRegion: 'no-drag' }} />
+        </div>
 
         <div className="flex items-center justify-center p-4 flex-1">
           <Card className="w-full max-w-md">
@@ -624,8 +627,11 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-neutral-900 to-black text-white flex flex-col font-sans selection:bg-red-500/30">
 
-      {/* Draggable Title Bar - Full width at top */}
-      <div className="w-full h-12 flex-shrink-0" style={{ WebkitAppRegion: 'drag' }} />
+      {/* Draggable Title Bar - Leave space for window controls on right */}
+      <div className="w-full h-12 flex-shrink-0 flex" style={{ WebkitAppRegion: 'drag' }}>
+        <div className="flex-1" style={{ WebkitAppRegion: 'drag' }} />
+        <div className="w-32" style={{ WebkitAppRegion: 'no-drag' }} />
+      </div>
 
       {/* Main content area - centered */}
       <div className="flex items-center justify-center p-4 flex-1">
