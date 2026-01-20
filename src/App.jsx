@@ -718,10 +718,10 @@ export default function App() {
         <div className="flex flex-col lg:flex-row gap-6">
           {/* Main Player Card */}
           <div className="w-full lg:w-[45%]">
-        <Card className="backdrop-blur-2xl bg-black/60 border-white/5">
+        <Card className="backdrop-blur-2xl bg-black/60 border-white/5 !p-4">
 
           {/* Artwork */}
-          <div className="aspect-square w-full bg-neutral-800 rounded-2xl mb-6 shadow-2xl overflow-hidden relative group border border-white/5">
+          <div className="w-full h-80 bg-neutral-800 rounded-2xl mb-4 shadow-2xl overflow-hidden relative group border border-white/5">
             {nowPlaying?.artwork ? (
               <img
                 src={getArtworkUrl(nowPlaying.artwork.url)}
@@ -743,11 +743,11 @@ export default function App() {
           </div>
 
           {/* Track Info */}
-          <div className="text-center mb-8 space-y-1">
-            <h1 className="text-2xl font-bold text-white truncate px-2">
+          <div className="text-center mb-3 space-y-1">
+            <h1 className="text-xl font-bold text-white truncate px-2">
               {nowPlaying?.name || "Not Playing"}
             </h1>
-            <p className="text-lg text-white/60 truncate px-4">
+            <p className="text-base text-white/60 truncate px-4">
               {nowPlaying?.artistName || "Cider Client"}
             </p>
             <p className="text-xs text-white/40 font-medium uppercase tracking-widest pt-1">
@@ -756,7 +756,7 @@ export default function App() {
           </div>
 
           {/* Seek Bar */}
-          <div className="mb-8 px-2">
+          <div className="mb-4 px-2">
             <Slider
               value={isSeeking ? seekValue : currentTime}
               max={duration || 100}
@@ -771,7 +771,7 @@ export default function App() {
           </div>
 
           {/* Controls */}
-          <div className="flex items-center justify-between mb-8 px-2">
+          <div className="flex items-center justify-between mb-4 px-2">
             <Button
               variant="icon"
               onClick={toggleShuffle}
@@ -786,8 +786,8 @@ export default function App() {
                 <SkipBack size={24} fill="currentColor" />
               </Button>
 
-              <Button variant="primary" onClick={handlePlayPause} className="w-16 h-16 flex items-center justify-center">
-                {isPlaying ? <Pause size={32} fill="currentColor" /> : <Play size={32} fill="currentColor" className="ml-1" />}
+              <Button variant="primary" onClick={handlePlayPause} className="w-14 h-14 flex items-center justify-center">
+                {isPlaying ? <Pause size={28} fill="currentColor" /> : <Play size={28} fill="currentColor" className="ml-1" />}
               </Button>
 
               <Button variant="secondary" onClick={handleNext}>
