@@ -145,6 +145,47 @@ jobs:
           echo "=== Windows artifacts ==="
           ls -la artifacts/windows/
 
+      - name: Create release body (dev)
+        if: needs.determine-channel.outputs.channel == 'dev'
+        run: |
+          cat > release-body.md << 'EOF'
+          ## ⚠️ Development Build
+
+          This is a development build and may contain unstable features or bugs. Use at your own risk.
+
+          ### Installation
+
+          **Windows**: Download `Cider-Remote-Setup-*.exe` and run the installer
+          **macOS**: Download `Cider-Remote-*.dmg` and drag to Applications
+
+          ### Enable Dev Updates
+
+          To receive automatic updates for development builds:
+
+          1. Install this build
+          2. Open the app and click the update button (bottom-right corner)
+          3. In the update notification card, click the "Dev" button to switch channels
+          4. The app will check for the latest dev updates automatically
+
+          ### Report Issues
+
+          If you encounter any bugs or issues, please report them on [GitHub Issues](https://github.com/anh-chu/cider-remote/issues).
+          EOF
+
+      - name: Create release body (stable)
+        if: needs.determine-channel.outputs.channel == 'latest'
+        run: |
+          cat > release-body.md << 'EOF'
+          ## Installation
+
+          **Windows**: Download `Cider-Remote-Setup-*.exe` and run the installer
+          **macOS**: Download `Cider-Remote-*.dmg` and drag to Applications
+
+          ## Auto-Update
+
+          If you already have Cider Remote installed, the app will automatically check for this update on startup and notify you.
+          EOF
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
@@ -160,33 +201,6 @@ jobs:
           draft: false
           prerelease: ${{ needs.determine-channel.outputs.channel == 'dev' }}
           generate_release_notes: true
-          body: ${{ needs.determine-channel.outputs.channel == 'dev' && '## ⚠️ Development Build
-
-This is a development build and may contain unstable features or bugs. Use at your own risk.
-
-### Installation
-
-**Windows**: Download `Cider-Remote-Setup-*.exe` and run the installer
-**macOS**: Download `Cider-Remote-*.dmg` and drag to Applications
-
-### Enable Dev Updates
-
-To receive automatic updates for development builds:
-
-1. Install this build
-2. Open the app and click the update button (bottom-right corner)
-3. In the update notification card, click the "Dev" button to switch channels
-4. The app will check for the latest dev updates automatically
-
-### Report Issues
-
-If you encounter any bugs or issues, please report them on [GitHub Issues](https://github.com/anh-chu/cider-remote/issues).' || '## Installation
-
-**Windows**: Download `Cider-Remote-Setup-*.exe` and run the installer
-**macOS**: Download `Cider-Remote-*.dmg` and drag to Applications
-
-## Auto-Update
-
-If you already have Cider Remote installed, the app will automatically check for this update on startup and notify you.' }}
+          body_path: release-body.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
