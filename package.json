@@ -47,7 +47,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "installerFilename": "Cider-Remote-Setup-${version}.exe"
+      "artifactName": "Cider-Remote-Setup-${version}.${ext}"
     },
     "mac": {
       "target": [
