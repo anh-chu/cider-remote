@@ -6,12 +6,25 @@ const UpdateNotification = () => {
   const [updateInfo, setUpdateInfo] = useState(null);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [showNotification, setShowNotification] = useState(false);
+  const [appVersion, setAppVersion] = useState(null);
 
   useEffect(() => {
     // Check if running in Electron
     if (!window.electron) {
       return;
     }
+
+    // Fetch app version
+    const fetchVersion = async () => {
+      try {
+        const version = await window.electron.ipcRenderer.invoke('get-app-version');
+        setAppVersion(version);
+      } catch (err) {
+        console.error('Failed to get app version:', err);
+      }
+    };
+
+    fetchVersion();
 
     const handleUpdateStatus = (event, { event: updateEvent, data }) => {
       console.log('Update event:', updateEvent, data);
@@ -94,13 +107,22 @@ const UpdateNotification = () => {
 
   if (!showNotification) {
     return (
-      <button
-        onClick={handleCheckForUpdates}
-        className="fixed bottom-4 right-4 bg-white/10 hover:bg-white/20 text-white rounded-full p-3 shadow-lg backdrop-blur-xl border border-white/10 transition-all hover:scale-105"
-        title="Check for updates"
-      >
-        <RefreshCw size={20} />
-      </button>
+      <div className="fixed bottom-4 right-4 group">
+        <button
+          onClick={handleCheckForUpdates}
+          className="bg-white/10 hover:bg-white/20 text-white rounded-full p-3 shadow-lg backdrop-blur-xl border border-white/10 transition-all hover:scale-105"
+        >
+          <RefreshCw size={20} />
+        </button>
+        {appVersion && (
+          <div className="absolute bottom-1/2 right-full mr-3 transform translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
+            <div className="bg-black/90 text-white text-sm px-3 py-2 rounded-lg border border-white/10 backdrop-blur-xl">
+              Current: v{appVersion}
+              <div className="absolute left-full top-1/2 transform -translate-y-1/2 border-4 border-transparent border-l-black/90"></div>
+            </div>
+          </div>
+        )}
+      </div>
     );
   }
 

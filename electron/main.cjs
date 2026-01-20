@@ -94,6 +94,10 @@ ipcMain.on('install-update', () => {
     autoUpdater.quitAndInstall(false, true);
 });
 
+ipcMain.handle('get-app-version', () => {
+    return app.getVersion();
+});
+
 app.on('ready', () => {
     createWindow();
 

@@ -11,6 +11,13 @@ contextBridge.exposeInMainWorld('electron', {
         ipcRenderer.send(channel, data);
       }
     },
+    invoke: (channel, data) => {
+      // Whitelist channels
+      const validChannels = ['get-app-version'];
+      if (validChannels.includes(channel)) {
+        return ipcRenderer.invoke(channel, data);
+      }
+    },
     on: (channel, func) => {
       const validChannels = ['update-status'];
       if (validChannels.includes(channel)) {
