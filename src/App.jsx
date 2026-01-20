@@ -677,7 +677,7 @@ export default function App() {
           />
         )}
 
-        <div className="w-full max-w-md z-10 relative">
+        <div className="w-full max-w-7xl z-10 relative">
 
           {/* Header */}
           <div className="flex justify-between items-center mb-6 px-2">
@@ -714,7 +714,10 @@ export default function App() {
           </div>
         )}
 
-        {/* Main Player Card */}
+        {/* Responsive Layout Container */}
+        <div className="flex flex-col lg:flex-row gap-6">
+          {/* Main Player Card */}
+          <div className="w-full lg:w-[45%]">
         <Card className="backdrop-blur-2xl bg-black/60 border-white/5">
 
           {/* Artwork */}
@@ -826,15 +829,19 @@ export default function App() {
           </div>
 
         </Card>
+          </div>
 
-        {/* Listen Together Integration */}
-        <ListenTogether
-          isConnected={status === 'connected'}
-          setRemoteControls={setRemoteControls}
-          ciderState={ciderStateMemo}
-          onRemoteAction={onRemoteActionCallback}
-          apiCall={apiCall}
-        />
+          {/* Listen Together Integration */}
+          <div className="w-full lg:flex-1">
+            <ListenTogether
+              isConnected={status === 'connected'}
+              setRemoteControls={setRemoteControls}
+              ciderState={ciderStateMemo}
+              onRemoteAction={onRemoteActionCallback}
+              apiCall={apiCall}
+            />
+          </div>
+        </div>
 
         {/* Auto-Update Notification */}
         <UpdateNotification />

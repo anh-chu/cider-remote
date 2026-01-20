@@ -677,7 +677,7 @@ export default function ListenTogether({
     // Connect logic is put in a collapsible/header block.
 
     return (
-        <div className="bg-neutral-800/50 rounded-xl p-4 border border-white/10 mt-6 min-h-[400px]">
+        <div className="bg-neutral-800/50 rounded-xl p-4 border border-white/10 min-h-[400px]">
             {/* Header / Connection Controls */}
             <div className="flex items-center justify-between mb-4 pb-4 border-b border-white/5">
                 <div className="flex items-center gap-2 text-purple-400">
