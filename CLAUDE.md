@@ -195,21 +195,27 @@ Auto-updates require specific build targets:
 
 Releases are automatically published via GitHub Actions:
 
-1. **Update Version**: Edit `package.json` and change version (e.g., `"0.3.0"` → `"0.4.0"`)
+**Stable Releases:**
+```bash
+git tag v0.4.0
+git push && git push --tags
+```
 
-2. **Tag and Push**:
-   ```bash
-   git commit -am "Bump version to 0.4.0"
-   git tag v0.4.0
-   git push && git push --tags
-   ```
+**Dev Releases:**
+```bash
+git tag v0.5.0-dev.1
+git push && git push --tags
+```
 
-3. **Automatic Build**: GitHub Actions automatically:
-   - Builds Windows NSIS installer and macOS DMG/ZIP
-   - Publishes to GitHub Releases with all update metadata files
-   - Existing installations will detect the update automatically
+GitHub Actions automatically:
+- Extracts version from git tag
+- Builds Windows NSIS installer and macOS DMG/ZIP
+- Publishes to GitHub Releases with all update metadata files
+- Existing installations will detect the update automatically
 
-**Note:** Version must be valid semver (x.y.z format). This project uses x.y.0 where patch is always 0.
+**Note:** Version must be valid semver (x.y.z format).
+- Stable releases: `v0.4.0`, `v0.5.0`
+- Dev releases: `v0.5.0-dev.1`, `v0.5.0-dev.2`
 
 ### Testing Updates
 
@@ -246,19 +252,16 @@ Cider Remote supports two update channels:
 **Publishing Dev Releases**
 
 ```bash
-# 1. Update version in package.json to include -dev prerelease tag
-#    Example: "0.5.0-dev.1"
-
-# 2. Commit, tag, and push
-git commit -am "Release 0.5.0-dev.1"
+# Just tag and push - GitHub Actions handles the rest
 git tag v0.5.0-dev.1
 git push && git push --tags
 
-# 3. GitHub Actions automatically:
-#    - Builds for macOS and Windows
-#    - Generates dev-mac.yml and dev.yml metadata files
-#    - Publishes to GitHub Releases with prerelease flag
-#    - Only detected by apps with dev channel enabled
+# GitHub Actions automatically:
+#   - Extracts version from tag (0.5.0-dev.1)
+#   - Builds for macOS and Windows
+#   - Generates dev-mac.yml and dev.yml metadata files
+#   - Publishes to GitHub Releases with prerelease flag
+#   - Only detected by apps with dev channel enabled
 ```
 
 **Version Naming Convention**
