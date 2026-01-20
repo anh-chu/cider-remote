@@ -186,28 +186,37 @@ jobs:
           If you already have Cider Remote installed, the app will automatically check for this update on startup and notify you.
           EOF
 
-      - name: Build file list
-        run: |
-          {
-            echo "artifacts/macos/*.dmg"
-            echo "artifacts/macos/*.zip"
-            echo "artifacts/windows/*.exe"
-            echo "artifacts/windows/*.blockmap"
-            if [[ "${{ needs.determine-channel.outputs.channel }}" == "dev" ]]; then
-              echo "artifacts/macos/dev-mac.yml"
-              echo "artifacts/windows/dev.yml"
-            else
-              echo "artifacts/macos/latest-mac.yml"
-              echo "artifacts/windows/latest.yml"
-            fi
-          } > files.txt
-
-      - name: Create Release
+      - name: Create Release (dev)
+        if: needs.determine-channel.outputs.channel == 'dev'
         uses: softprops/action-gh-release@v1
         with:
-          files: files.txt
+          files: |
+            artifacts/macos/*.dmg
+            artifacts/macos/*.zip
+            artifacts/macos/dev-mac.yml
+            artifacts/windows/*.exe
+            artifacts/windows/*.blockmap
+            artifacts/windows/dev.yml
           draft: false
-          prerelease: ${{ needs.determine-channel.outputs.channel == 'dev' }}
+          prerelease: true
+          generate_release_notes: true
+          body_path: release-body.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Release (stable)
+        if: needs.determine-channel.outputs.channel == 'latest'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/macos/*.dmg
+            artifacts/macos/*.zip
+            artifacts/macos/latest-mac.yml
+            artifacts/windows/*.exe
+            artifacts/windows/*.blockmap
+            artifacts/windows/latest.yml
+          draft: false
+          prerelease: false
           generate_release_notes: true
           body_path: release-body.md
         env:
