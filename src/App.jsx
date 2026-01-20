@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
   Play, Pause, SkipBack, SkipForward, Volume2, VolumeX,
   Settings, RefreshCw, Repeat, Shuffle, Image as ImageIcon,
-  AlertTriangle, Music, Disc, Loader2, Radio
+  AlertTriangle, Music, Disc, Loader2, Radio, Minus, Square, X as CloseIcon
 } from 'lucide-react';
 import ListenTogether from './ListenTogether';
 import UpdateNotification from './UpdateNotification';
@@ -17,6 +17,49 @@ import UpdateNotification from './UpdateNotification';
  */
 
 // --- Components ---
+
+const TitleBar = () => {
+  const handleMinimize = () => {
+    window.electron?.ipcRenderer?.send('window-minimize');
+  };
+
+  const handleMaximize = () => {
+    window.electron?.ipcRenderer?.send('window-maximize');
+  };
+
+  const handleClose = () => {
+    window.electron?.ipcRenderer?.send('window-close');
+  };
+
+  return (
+    <div className="w-full h-12 flex-shrink-0 flex" style={{ WebkitAppRegion: 'drag' }}>
+      <div className="flex-1" style={{ WebkitAppRegion: 'drag' }} />
+      <div className="flex items-center gap-1 px-2" style={{ WebkitAppRegion: 'no-drag' }}>
+        <button
+          onClick={handleMinimize}
+          className="hover:bg-white/10 rounded p-2 transition-colors text-white/70 hover:text-white"
+          title="Minimize"
+        >
+          <Minus size={16} />
+        </button>
+        <button
+          onClick={handleMaximize}
+          className="hover:bg-white/10 rounded p-2 transition-colors text-white/70 hover:text-white"
+          title="Maximize"
+        >
+          <Square size={16} />
+        </button>
+        <button
+          onClick={handleClose}
+          className="hover:bg-red-500/20 rounded p-2 transition-colors text-white/70 hover:text-red-500"
+          title="Close"
+        >
+          <CloseIcon size={16} />
+        </button>
+      </div>
+    </div>
+  );
+};
 
 const Card = ({ children, className = "" }) => (
   <div className={`bg-black/40 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl ${className}`}>
@@ -557,11 +600,7 @@ export default function App() {
   if (showSettings || status === 'disconnected') {
     return (
       <div className="min-h-screen bg-neutral-900 text-white flex flex-col font-sans">
-        {/* Draggable Title Bar - Leave space for window controls on right */}
-        <div className="w-full h-12 flex-shrink-0 flex" style={{ WebkitAppRegion: 'drag' }}>
-          <div className="flex-1" style={{ WebkitAppRegion: 'drag' }} />
-          <div className="w-32" style={{ WebkitAppRegion: 'no-drag' }} />
-        </div>
+        <TitleBar />
 
         <div className="flex items-center justify-center p-4 flex-1">
           <Card className="w-full max-w-md">
@@ -626,12 +665,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-neutral-900 to-black text-white flex flex-col font-sans selection:bg-red-500/30">
-
-      {/* Draggable Title Bar - Leave space for window controls on right */}
-      <div className="w-full h-12 flex-shrink-0 flex" style={{ WebkitAppRegion: 'drag' }}>
-        <div className="flex-1" style={{ WebkitAppRegion: 'drag' }} />
-        <div className="w-32" style={{ WebkitAppRegion: 'no-drag' }} />
-      </div>
+      <TitleBar />
 
       {/* Main content area - centered */}
       <div className="flex items-center justify-center p-4 flex-1">

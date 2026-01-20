@@ -6,7 +6,7 @@ contextBridge.exposeInMainWorld('electron', {
   ipcRenderer: {
     send: (channel, data) => {
       // Whitelist channels
-      const validChannels = ['check-for-updates', 'download-update', 'install-update'];
+      const validChannels = ['check-for-updates', 'download-update', 'install-update', 'window-minimize', 'window-maximize', 'window-close'];
       if (validChannels.includes(channel)) {
         ipcRenderer.send(channel, data);
       }
