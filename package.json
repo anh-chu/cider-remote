@@ -46,7 +46,8 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "installerFilename": "Cider-Remote-Setup-${version}.exe"
     },
     "mac": {
       "target": [
