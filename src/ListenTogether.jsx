@@ -22,6 +22,9 @@ export default function ListenTogether({
             return 'http://localhost:3001';
         }
     });
+    const [pendingServerUrl, setPendingServerUrl] = useState(serverUrl);
+    const [isSavingServerUrl, setIsSavingServerUrl] = useState(false);
+    const [serverUrlSaved, setServerUrlSaved] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
     const [joinedRoom, setJoinedRoom] = useState(null);
     const [queue, setQueue] = useState([]);
@@ -100,13 +103,24 @@ export default function ListenTogether({
         sendNextPing();
     };
 
+    const saveServerUrl = () => {
+        setIsSavingServerUrl(true);
+        try {
+            localStorage.setItem('cider_remote_url', pendingServerUrl);
+            setServerUrl(pendingServerUrl);
+            setServerUrlSaved(true);
+            setTimeout(() => {
+                setIsSavingServerUrl(false);
+                setServerUrlSaved(false);
+            }, 1500);
+        } catch (err) {
+            console.error('Failed to save server URL to localStorage:', err);
+            setIsSavingServerUrl(false);
+        }
+    };
+
     const connect = async () => {
         try {
-            try {
-                localStorage.setItem('cider_remote_url', serverUrl);
-            } catch (err) {
-                console.error('Failed to save server URL to localStorage:', err);
-            }
             const s = io(serverUrl);
 
             s.on('connect', () => {
@@ -453,6 +467,13 @@ export default function ListenTogether({
         };
     }, [socket, onRemoteAction]);
 
+    // Sync pending URL when settings are toggled
+    useEffect(() => {
+        if (showSettings) {
+            setPendingServerUrl(serverUrl);
+        }
+    }, [showSettings, serverUrl]);
+
     // [DEBUG] Lifecycle Check
     useEffect(() => {
         return () => { };
@@ -716,12 +737,33 @@ export default function ListenTogether({
                             </form>
                         )}
                         {showSettings && (
-                            <input
-                                value={serverUrl}
-                                onChange={e => setServerUrl(e.target.value)}
-                                className="bg-neutral-900 border border-white/10 rounded-lg px-2 py-1 text-white text-[10px] w-32 focus:outline-none focus:border-purple-500"
-                                placeholder="Server URL"
-                            />
+                            <div className="flex items-center gap-1">
+                                <input
+                                    value={pendingServerUrl}
+                                    onChange={e => setPendingServerUrl(e.target.value)}
+                                    disabled={isSavingServerUrl}
+                                    className="bg-neutral-900 border border-white/10 rounded-lg px-2 py-1 text-white text-[10px] w-40 focus:outline-none focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    placeholder="Server URL"
+                                />
+                                <button
+                                    onClick={saveServerUrl}
+                                    disabled={isSavingServerUrl || pendingServerUrl === serverUrl}
+                                    className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-500 text-white px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition-colors disabled:cursor-not-allowed"
+                                >
+                                    {isSavingServerUrl ? (
+                                        <>
+                                            <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                            <span>Saving...</span>
+                                        </>
+                                    ) : serverUrlSaved ? (
+                                        <>
+                                            <span>✓ Saved</span>
+                                        </>
+                                    ) : (
+                                        <span>Save</span>
+                                    )}
+                                </button>
+                            </div>
                         )}
                         <button onClick={() => setShowSettings(!showSettings)} className="text-white/20 hover:text-white p-1">
                             <Settings size={14} />
@@ -736,6 +778,13 @@ export default function ListenTogether({
                             <span className="text-[10px] text-white/50 uppercase tracking-wider font-bold">
                                 {socket.id === masterId ? 'HOST' : 'LISTENER'}
                             </span>
+                            <span className="w-px h-3 bg-white/10 mx-1"></span>
+                            <div className="flex items-center gap-1">
+                                <Users size={12} className="text-purple-300" />
+                                <span className="text-[10px] text-white/50 uppercase tracking-wider font-bold">
+                                    {users.length} {users.length === 1 ? 'person' : 'people'}
+                                </span>
+                            </div>
                         </div>
                         <button onClick={() => {
                             if (socket) {
@@ -786,6 +835,13 @@ export default function ListenTogether({
                     {activeTab === 'history' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-purple-500 rounded-t-full" />}
                 </button>
                 <button
+                    onClick={() => setActiveTab('people')}
+                    className={`pb-2 text-sm font-bold transition-colors relative ${activeTab === 'people' ? 'text-white' : 'text-white/40 hover:text-white/60'}`}
+                >
+                    People
+                    {activeTab === 'people' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-purple-500 rounded-t-full" />}
+                </button>
+                <button
                     onClick={() => setActiveTab('search')}
                     className={`pb-2 text-sm font-bold transition-colors relative ${activeTab === 'search' ? 'text-white' : 'text-white/40 hover:text-white/60'}`}
                 >
@@ -796,7 +852,36 @@ export default function ListenTogether({
 
             {/* Content Area */}
             <div className="min-h-[300px] max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
-                {activeTab === 'search' ? (
+                {activeTab === 'people' ? (
+                    <div className="space-y-2">
+                        {users.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-12 text-white/20">
+                                <Users size={32} className="mb-2 opacity-50" />
+                                <p className="text-xs">No one in room</p>
+                            </div>
+                        ) : (
+                            users.map((user) => (
+                                <div
+                                    key={user.id}
+                                    className="flex items-center gap-3 p-3 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
+                                >
+                                    <div className="flex-1">
+                                        <p className="text-xs font-bold text-white">{user.name}</p>
+                                        <p className="text-[10px] text-white/40">
+                                            {socket?.id === user.id ? 'You' : ''}
+                                            {socket?.id === user.id && socket?.id === masterId ? ' • ' : ''}
+                                            {socket?.id === user.id && socket?.id === masterId ? 'Host' : ''}
+                                            {socket?.id !== user.id && user.id === masterId ? 'Host' : ''}
+                                        </p>
+                                    </div>
+                                    {user.id === masterId && (
+                                        <Crown size={14} className="text-yellow-500" />
+                                    )}
+                                </div>
+                            ))
+                        )}
+                    </div>
+                ) : activeTab === 'search' ? (
                     <div className="space-y-4">
                         <div className="relative">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" size={16} />

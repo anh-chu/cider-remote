@@ -121,6 +121,8 @@ export default function App() {
     }
   });
   const [showSettings, setShowSettings] = useState(false);
+  const [isSavingConfig, setIsSavingConfig] = useState(false);
+  const [configSaved, setConfigSaved] = useState(false);
 
   // Player State
   // Default to 'connecting' if we have a config, otherwise 'disconnected'
@@ -470,6 +472,8 @@ export default function App() {
 
   const saveConfig = (e) => {
     e.preventDefault();
+    setIsSavingConfig(true);
+
     const formData = new FormData(e.target);
     const newConfig = {
       host: formData.get('host'),
@@ -481,11 +485,18 @@ export default function App() {
     } catch (err) {
       console.error('Failed to save config to localStorage:', err);
     }
-    setShowSettings(false);
-    // Hard reset connection
-    errorCount.current = 0;
-    setStatus('disconnected');
-    setTimeout(retryConnection, 500);
+
+    // Show confirmation for 1.5 seconds, then close and reconnect
+    setConfigSaved(true);
+    setTimeout(() => {
+      setIsSavingConfig(false);
+      setConfigSaved(false);
+      setShowSettings(false);
+      // Hard reset connection
+      errorCount.current = 0;
+      setStatus('disconnected');
+      setTimeout(retryConnection, 500);
+    }, 1500);
   };
 
   // --- Helpers ---
@@ -615,7 +626,8 @@ export default function App() {
               <input
                 name="host"
                 defaultValue={config.host}
-                className="w-full bg-neutral-800 border border-neutral-700 rounded-lg p-3 focus:outline-none focus:border-red-500 text-white"
+                disabled={isSavingConfig}
+                className="w-full bg-neutral-800 border border-neutral-700 rounded-lg p-3 focus:outline-none focus:border-red-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
                 placeholder="http://localhost:10767"
               />
             </div>
@@ -626,10 +638,19 @@ export default function App() {
                 name="token"
                 defaultValue={config.token}
                 type="password"
-                className="w-full bg-neutral-800 border border-neutral-700 rounded-lg p-3 focus:outline-none focus:border-red-500 text-white"
+                disabled={isSavingConfig}
+                className="w-full bg-neutral-800 border border-neutral-700 rounded-lg p-3 focus:outline-none focus:border-red-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
                 placeholder="Paste token from Cider Settings"
               />
             </div>
+
+            {/* Success Message */}
+            {configSaved && (
+              <div className="bg-green-500/20 border border-green-500/50 rounded-lg p-4 text-sm text-green-200 flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                <span>Settings saved successfully! Connecting...</span>
+              </div>
+            )}
 
             {/* Warning Box */}
             <div className="bg-neutral-800 rounded-lg p-4 text-xs text-neutral-400 space-y-2">
@@ -642,7 +663,7 @@ export default function App() {
             </div>
 
             <div className="flex gap-3 pt-2">
-              {status !== 'disconnected' && (
+              {status !== 'disconnected' && !isSavingConfig && (
                 <Button
                   type="button"
                   variant="ghost"
@@ -652,8 +673,15 @@ export default function App() {
                   Cancel
                 </Button>
               )}
-              <Button type="submit" className="flex-1 bg-red-600 hover:bg-red-700">
-                Save & Connect
+              <Button
+                type="submit"
+                disabled={isSavingConfig}
+                className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-red-500"
+              >
+                <div className="flex items-center justify-center gap-2">
+                  {isSavingConfig && <Loader2 size={16} className="animate-spin" />}
+                  <span>{isSavingConfig ? 'Saving...' : 'Save & Connect'}</span>
+                </div>
               </Button>
             </div>
           </form>
