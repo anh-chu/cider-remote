@@ -133,10 +133,6 @@ export default function App() {
     }
 
     let host = config.host;
-    // Auto-proxy to localhost in dev mode (matches vite proxy config)
-    if (import.meta.env.DEV && host === 'http://localhost:10767') {
-      host = '';
-    }
 
     const controller = new AbortController();
     // Use longer timeout for Search (run-v3), short for polling
