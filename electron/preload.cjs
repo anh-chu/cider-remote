@@ -6,14 +6,14 @@ contextBridge.exposeInMainWorld('electron', {
   ipcRenderer: {
     send: (channel, data) => {
       // Whitelist channels
-      const validChannels = ['check-for-updates', 'download-update', 'install-update', 'window-minimize', 'window-maximize', 'window-close', 'set-update-channel'];
+      const validChannels = ['check-for-updates', 'download-update', 'install-update', 'window-minimize', 'window-maximize', 'window-close'];
       if (validChannels.includes(channel)) {
         ipcRenderer.send(channel, data);
       }
     },
     invoke: (channel, data) => {
       // Whitelist channels
-      const validChannels = ['get-app-version', 'get-update-channel'];
+      const validChannels = ['get-app-version'];
       if (validChannels.includes(channel)) {
         return ipcRenderer.invoke(channel, data);
       }

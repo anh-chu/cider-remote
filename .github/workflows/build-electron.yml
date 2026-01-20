@@ -7,28 +7,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  determine-channel:
-    name: Determine release channel
-    runs-on: ubuntu-latest
-    outputs:
-      channel: ${{ steps.channel.outputs.channel }}
-      is-release: ${{ steps.channel.outputs.is-release }}
-    steps:
-      - name: Determine channel from tag
-        id: channel
-        run: |
-          if [[ "${{ github.ref }}" == *"-dev"* ]]; then
-            echo "channel=dev" >> $GITHUB_OUTPUT
-            echo "is-release=false" >> $GITHUB_OUTPUT
-          else
-            echo "channel=latest" >> $GITHUB_OUTPUT
-            echo "is-release=true" >> $GITHUB_OUTPUT
-          fi
-
   build:
     name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    needs: determine-channel
 
     strategy:
       matrix:
@@ -93,11 +74,11 @@ jobs:
         if: matrix.platform == 'mac'
         uses: actions/upload-artifact@v4
         with:
-          name: cider-remote-${{ needs.determine-channel.outputs.channel }}-${{ matrix.artifact-name }}
+          name: cider-remote-${{ matrix.artifact-name }}
           path: |
             dist_electron/*.dmg
             dist_electron/*.zip
-            dist_electron/${{ needs.determine-channel.outputs.channel == 'dev' && 'dev-mac.yml' || 'latest-mac.yml' }}
+            dist_electron/latest-mac.yml
           if-no-files-found: error
           retention-days: 30
 
@@ -105,17 +86,17 @@ jobs:
         if: matrix.platform == 'win'
         uses: actions/upload-artifact@v4
         with:
-          name: cider-remote-${{ needs.determine-channel.outputs.channel }}-${{ matrix.artifact-name }}
+          name: cider-remote-${{ matrix.artifact-name }}
           path: |
             dist_electron/*.exe
             dist_electron/*.exe.blockmap
-            dist_electron/${{ needs.determine-channel.outputs.channel == 'dev' && 'dev.yml' || 'latest.yml' }}
+            dist_electron/latest.yml
           if-no-files-found: error
           retention-days: 30
 
   release:
     name: Create Release
-    needs: [build, determine-channel]
+    needs: build
     runs-on: ubuntu-latest
 
     permissions:
@@ -128,13 +109,13 @@ jobs:
       - name: Download macOS artifacts
         uses: actions/download-artifact@v4
         with:
-          name: cider-remote-${{ needs.determine-channel.outputs.channel }}-macos
+          name: cider-remote-macos
           path: artifacts/macos
 
       - name: Download Windows artifacts
         uses: actions/download-artifact@v4
         with:
-          name: cider-remote-${{ needs.determine-channel.outputs.channel }}-windows
+          name: cider-remote-windows
           path: artifacts/windows
 
       - name: List downloaded artifacts
@@ -143,47 +124,6 @@ jobs:
           ls -la artifacts/macos/
           echo "=== Windows artifacts ==="
           ls -la artifacts/windows/
-
-      - name: Create release body (dev)
-        if: needs.determine-channel.outputs.channel == 'dev'
-        run: |
-          cat > release-body.md << 'EOF'
-          ## ⚠️ Development Build
-
-          This is a development build and may contain unstable features or bugs. Use at your own risk.
-
-          ### Installation
-
-          **Windows**: Download `Cider-Remote-Setup-*.exe` and run the installer
-          **macOS**: Download `Cider-Remote-*.dmg` and drag to Applications
-
-          ### Enable Dev Updates
-
-          To receive automatic updates for development builds:
-
-          1. Install this build
-          2. Open the app and click the update button (bottom-right corner)
-          3. In the update notification card, click the "Dev" button to switch channels
-          4. The app will check for the latest dev updates automatically
-
-          ### Report Issues
-
-          If you encounter any bugs or issues, please report them on [GitHub Issues](https://github.com/anh-chu/cider-remote/issues).
-          EOF
-
-      - name: Create release body (stable)
-        if: needs.determine-channel.outputs.channel == 'latest'
-        run: |
-          cat > release-body.md << 'EOF'
-          ## Installation
-
-          **Windows**: Download `Cider-Remote-Setup-*.exe` and run the installer
-          **macOS**: Download `Cider-Remote-*.dmg` and drag to Applications
-
-          ## Auto-Update
-
-          If you already have Cider Remote installed, the app will automatically check for this update on startup and notify you.
-          EOF
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -196,8 +136,7 @@ jobs:
             artifacts/windows/*.blockmap
             artifacts/windows/latest.yml
           draft: false
-          prerelease: ${{ needs.determine-channel.outputs.channel == 'dev' }}
+          prerelease: false
           generate_release_notes: true
-          body_path: release-body.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
