@@ -954,7 +954,7 @@ export default function ListenTogether({
                             <button
                                 onClick={exportDebugLogs}
                                 className="text-yellow-400 hover:text-yellow-300 p-1"
-                                title={`Export debug logs (${debugLogsRef.current.length} entries)`}
+                                title={`Export debug logs (${debugStatsRef.current.seeks.length} seeks)`}
                             >
                                 <Download size={14} />
                             </button>
