@@ -35,10 +35,16 @@ const rooms = {};
 //     isPlaying: false,
 //     currentSong: null,
 //     timestamp: 0,
-//     lastUpdated: Date.now()
+//     lastUpdated: Date.now(),
+//     seq: 0 // [NEW] Sequence number for ordering
 //   },
-//   users: [] // list of socket IDs
+//   users: [], // list of socket IDs
+//   masterEpoch: 0 // [NEW] Increments when master changes
 // }
+
+// --- Client Clock Offsets ---
+// Maps socket.id -> { offset: number, rtt: number, samples: number[] }
+const clientClocks = new Map();
 
 // --- Helpers ---
 const getRoom = (roomId) => {
@@ -52,10 +58,13 @@ const getRoom = (roomId) => {
                 currentSong: null,
                 timestamp: 0,
                 lastUpdated: Date.now(),
-                source: 'master' // [NEW] Default to master when empty
+                source: 'master',
+                seq: 0, // [NEW] Sequence number for ordering
+                lastSeekTimestamp: 0
             },
             users: [],
-            masterId: null // [NEW] Master Role
+            masterId: null,
+            masterEpoch: 0 // [NEW] Increments when master changes
         };
         console.log(`Room created: ${roomId}`);
     }
@@ -64,6 +73,28 @@ const getRoom = (roomId) => {
 
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
+
+    // --- Time Sync Protocol ---
+    // Client sends ping with local time, server responds with server time
+    // Client calculates offset = (serverTime - clientTime) - (rtt / 2)
+    socket.on('time_sync_request', ({ clientTime, sampleIndex }) => {
+        const serverTime = Date.now();
+        socket.emit('time_sync_response', {
+            clientTime,
+            serverTime,
+            sampleIndex
+        });
+    });
+
+    // Client reports its calculated offset (for logging/debugging)
+    socket.on('time_sync_report', ({ offset, rtt }) => {
+        clientClocks.set(socket.id, {
+            offset,
+            rtt,
+            lastSync: Date.now()
+        });
+        // console.log(`Clock sync for ${socket.id}: offset=${offset}ms, rtt=${rtt}ms`);
+    });
 
     socket.on('join_room', ({ roomId, username }) => {
         socket.join(roomId);
@@ -80,20 +111,26 @@ io.on('connection', (socket) => {
         // Assign Master if none exists
         if (!room.masterId) {
             room.masterId = socket.id;
+            room.masterEpoch += 1; // [NEW] Increment epoch on master assignment
         }
 
-        // Send current state to new user
+        // Send current state to new user (including masterEpoch)
         socket.emit('sync_state', {
             queue: room.queue,
             history: room.history,
             playback: room.playback,
             users: room.users,
-            masterId: room.masterId
+            masterId: room.masterId,
+            masterEpoch: room.masterEpoch,
+            serverTime: Date.now() // [NEW] Include server time for immediate sync
         });
 
         // Notify others
         io.to(roomId).emit('users_update', room.users);
-        io.to(roomId).emit('master_update', room.masterId);
+        io.to(roomId).emit('master_update', {
+            masterId: room.masterId,
+            masterEpoch: room.masterEpoch
+        });
 
         console.log(`User ${socket.id} (${username}) joined room ${roomId}`);
     });
@@ -105,28 +142,53 @@ io.on('connection', (socket) => {
             // Verify target exists
             if (room.users.find(u => u.id === targetId)) {
                 room.masterId = targetId;
-                io.to(roomId).emit('master_update', room.masterId);
-                console.log(`Room ${roomId}: Master transferred to ${targetId}`);
+                room.masterEpoch += 1; // [NEW] Increment epoch on master transfer
+                io.to(roomId).emit('master_update', {
+                    masterId: room.masterId,
+                    masterEpoch: room.masterEpoch
+                });
+                console.log(`Room ${roomId}: Master transferred to ${targetId} (epoch: ${room.masterEpoch})`);
             }
         }
     });
 
     // [NEW] Master State Update (Relay)
-    socket.on('master_state_update', ({ roomId, state }) => {
+    socket.on('master_state_update', ({ roomId, state, masterEpoch }) => {
         const room = getRoom(roomId);
         // console.log(`Debug connection: Socket ${socket.id} claiming to be Master of ${roomId}. Actual Master: ${room.masterId}`);
-        // Only accept if from Master
+
+        // Only accept if from Master AND epoch matches (prevents stale updates)
         if (room.masterId === socket.id) {
+            // [NEW] Validate epoch if provided (optional for backwards compatibility)
+            if (masterEpoch !== undefined && masterEpoch !== room.masterEpoch) {
+                console.warn(`Blocked stale master update from ${socket.id} (epoch mismatch: ${masterEpoch} vs ${room.masterEpoch})`);
+                return;
+            }
+
             // console.log(`[${Date.now()}] Master Update from ${socket.id} in room ${roomId}: TS=${state.playback.timestamp}`);
             // [Fix] Update Server-side Single Source of Truth
             // This prevents clients receiving empty state on reconnect/join
             room.queue = state.queue || [];
             room.history = state.history || [];
-            room.playback = state.playback || room.playback;
 
-            // Relay to everyone else in the room
-            socket.to(roomId).emit('sync_state', state);
-            // console.log(`Relayed sync_state to room ${roomId}`);
+            // [NEW] Increment sequence number on each accepted state update
+            room.playback.seq = (room.playback.seq || 0) + 1;
+
+            // Merge playback state with server's seq
+            room.playback = {
+                ...state.playback,
+                seq: room.playback.seq,
+                serverTime: Date.now() // [NEW] Authoritative server timestamp
+            };
+
+            // Relay to everyone else in the room with server time and seq
+            socket.to(roomId).emit('sync_state', {
+                ...state,
+                playback: room.playback,
+                masterEpoch: room.masterEpoch,
+                serverTime: Date.now()
+            });
+            // console.log(`Relayed sync_state to room ${roomId} (seq: ${room.playback.seq})`);
         } else {
             console.warn(`Blocked spoofed master update from ${socket.id} in room ${roomId} (Master is ${room.masterId})`);
         }
@@ -167,18 +229,31 @@ io.on('connection', (socket) => {
             // Assign new master if users remain
             if (room.users.length > 0) {
                 room.masterId = room.users[0].id;
-                console.log(`Room ${roomId}: Master reassigned to ${room.masterId}`);
+                room.masterEpoch += 1; // [NEW] Increment epoch on master reassignment
+                console.log(`Room ${roomId}: Master reassigned to ${room.masterId} (epoch: ${room.masterEpoch})`);
             } else {
                 // Reset state only if room is empty
                 room.queue = [];
-                room.playback = { isPlaying: false, currentSong: null, timestamp: 0, lastUpdated: Date.now(), source: 'master' };
+                room.playback = {
+                    isPlaying: false,
+                    currentSong: null,
+                    timestamp: 0,
+                    lastUpdated: Date.now(),
+                    source: 'master',
+                    seq: 0,
+                    lastSeekTimestamp: 0
+                };
+                room.masterEpoch = 0; // Reset epoch when room is empty
                 console.log(`Room ${roomId}: Master left. Room empty. Resetting room state.`);
             }
         }
 
         // Notify remaining users
         io.to(roomId).emit('users_update', room.users);
-        io.to(roomId).emit('master_update', room.masterId);
+        io.to(roomId).emit('master_update', {
+            masterId: room.masterId,
+            masterEpoch: room.masterEpoch
+        });
         // If master left, sync empty state
         if (!room.masterId) {
             io.to(roomId).emit('sync_state', {
@@ -186,13 +261,18 @@ io.on('connection', (socket) => {
                 history: room.history,
                 playback: room.playback,
                 users: room.users,
-                masterId: room.masterId
+                masterId: room.masterId,
+                masterEpoch: room.masterEpoch,
+                serverTime: Date.now()
             });
         }
     });
 
     socket.on('disconnect', () => {
         console.log('User disconnected:', socket.id);
+        // Clean up clock data
+        clientClocks.delete(socket.id);
+
         // Find room user was in and remove them
         for (const roomId in rooms) {
             const room = rooms[roomId];
@@ -205,14 +285,19 @@ io.on('connection', (socket) => {
                 if (wasMaster) {
                     if (room.users.length > 0) {
                         room.masterId = room.users[0].id;
+                        room.masterEpoch += 1; // [NEW] Increment epoch on master reassignment
                     } else {
                         room.masterId = null;
+                        room.masterEpoch = 0; // Reset epoch when room is empty
                     }
-                    io.to(roomId).emit('master_update', room.masterId);
+                    io.to(roomId).emit('master_update', {
+                        masterId: room.masterId,
+                        masterEpoch: room.masterEpoch
+                    });
                 }
 
                 io.to(roomId).emit('users_update', room.users);
-                console.log(`User removed from room ${roomId}`);
+                console.log(`User removed from room ${roomId} (epoch: ${room.masterEpoch})`);
                 break;
             }
         }

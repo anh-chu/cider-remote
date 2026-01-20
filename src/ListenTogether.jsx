@@ -32,6 +32,13 @@ export default function ListenTogether({
     const [serverState, setServerState] = useState(null);
     const [error, setError] = useState('');
 
+    // [NEW] Clock Sync State
+    const [clockOffset, setClockOffset] = useState(0); // Estimated offset between local and server time (ms)
+    const [rtt, setRtt] = useState(100); // Round-trip time estimate (ms)
+    const clockSyncSamplesRef = useRef([]); // Store samples for median filtering
+    const lastSeqRef = useRef(0); // [NEW] Track last seen sequence number
+    const masterEpochRef = useRef(0); // [NEW] Track current master epoch
+
     // Search State
     const [showSearch, setShowSearch] = useState(false);
     const [searchQuery, setSearchQuery] = useState(''); // Renamed from searchTerm
@@ -39,6 +46,59 @@ export default function ListenTogether({
     const [isSearching, setIsSearching] = useState(false);
     const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
     const [activeTab, setActiveTab] = useState('queue'); // [NEW] Added for Tabs UI
+
+    // [NEW] Clock Sync Protocol
+    const performClockSync = (s, numSamples = 5) => {
+        let sampleIndex = 0;
+        const samples = [];
+
+        const sendNextPing = () => {
+            if (sampleIndex < numSamples) {
+                s.emit('time_sync_request', {
+                    clientTime: Date.now(),
+                    sampleIndex
+                });
+            }
+        };
+
+        const handleResponse = ({ clientTime, serverTime, sampleIndex: idx }) => {
+            const receiveTime = Date.now();
+            const roundTrip = receiveTime - clientTime;
+            // offset = serverTime - clientTime - (rtt / 2)
+            // This estimates what the server's clock read at the moment we sent the request
+            const offset = serverTime - clientTime - (roundTrip / 2);
+
+            samples.push({ offset, rtt: roundTrip });
+
+            sampleIndex++;
+            if (sampleIndex < numSamples) {
+                // Small delay between samples to avoid burst
+                setTimeout(sendNextPing, 50);
+            } else {
+                // Done collecting samples, calculate median offset
+                // Use median to reject outliers
+                const sortedOffsets = samples.map(s => s.offset).sort((a, b) => a - b);
+                const sortedRtts = samples.map(s => s.rtt).sort((a, b) => a - b);
+                const medianOffset = sortedOffsets[Math.floor(sortedOffsets.length / 2)];
+                const medianRtt = sortedRtts[Math.floor(sortedRtts.length / 2)];
+
+                setClockOffset(medianOffset);
+                setRtt(medianRtt);
+                clockSyncSamplesRef.current = samples;
+
+                // Report to server for debugging
+                s.emit('time_sync_report', { offset: medianOffset, rtt: medianRtt });
+
+                console.log(`Clock sync complete: offset=${medianOffset}ms, rtt=${medianRtt}ms`);
+
+                // Remove listener after sync is complete
+                s.off('time_sync_response', handleResponse);
+            }
+        };
+
+        s.on('time_sync_response', handleResponse);
+        sendNextPing();
+    };
 
     const connect = async () => {
         try {
@@ -52,25 +112,59 @@ export default function ListenTogether({
             s.on('connect', () => {
                 console.log('Connected to Coordinator');
                 setError('');
+                // [NEW] Perform initial clock sync on connection
+                performClockSync(s);
             });
 
             s.on('sync_state', (state) => {
                 const q = state.queue || [];
-                console.log("📥 Slave: Received Sync State. Queue Len:", q.length, "Source:", state.source);
+                console.log("📥 Slave: Received Sync State. Queue Len:", q.length, "Source:", state.source, "Seq:", state.playback?.seq);
                 console.log("📥 Slave: Received Song:", state.playback?.currentSong?.name, "| ID:", state.playback?.currentSong?.id, "| playParams.id:", state.playback?.currentSong?.playParams?.id);
+
+                // [NEW] Check sequence number - reject out-of-order updates
+                const incomingSeq = state.playback?.seq || 0;
+                if (incomingSeq > 0 && incomingSeq <= lastSeqRef.current) {
+                    console.log(`Rejecting out-of-order sync_state (seq ${incomingSeq} <= ${lastSeqRef.current})`);
+                    return;
+                }
+                lastSeqRef.current = incomingSeq;
+
+                // [NEW] Check master epoch - reject stale master updates
+                if (state.masterEpoch !== undefined) {
+                    if (state.masterEpoch < masterEpochRef.current) {
+                        console.log(`Rejecting stale sync_state (epoch ${state.masterEpoch} < ${masterEpochRef.current})`);
+                        return;
+                    }
+                    masterEpochRef.current = state.masterEpoch;
+                }
+
                 if (q.length === 0) console.warn("Slave: Received EMPTY queue!");
                 setQueue(q);
                 setHistory(state.history || []);
                 if (state.playback) {
                     state.playback.localReceivedTime = Date.now();
+                    // [NEW] Store server time for clock-adjusted calculations
+                    state.playback.serverTimestamp = state.serverTime || state.playback.serverTime;
                 }
                 setServerState(state.playback);
                 if (state.users) setUsers(state.users);
                 if (state.masterId) setMasterId(state.masterId);
             });
 
-            s.on('master_update', (id) => {
-                console.log("Client: Received Master Update:", id, "My ID:", s.id);
+            s.on('master_update', (data) => {
+                // [NEW] Handle both old format (just id) and new format ({masterId, masterEpoch})
+                const id = data.masterId !== undefined ? data.masterId : data;
+                const epoch = data.masterEpoch;
+
+                console.log("Client: Received Master Update:", id, "Epoch:", epoch, "My ID:", s.id);
+
+                // [NEW] Update epoch if provided
+                if (epoch !== undefined) {
+                    masterEpochRef.current = epoch;
+                    // Reset sequence on epoch change
+                    lastSeqRef.current = 0;
+                }
+
                 setMasterId(id);
             });
 
@@ -87,7 +181,9 @@ export default function ListenTogether({
             });
 
             s.on('playback_update', (pb) => {
-                if (pb) pb.localReceivedTime = Date.now();
+                if (pb) {
+                    pb.localReceivedTime = Date.now();
+                }
                 setServerState(pb);
             });
 
@@ -101,9 +197,28 @@ export default function ListenTogether({
         e.preventDefault();
         if (!socket || !roomId) return;
         if (!socket.connected) socket.connect(); // [Safety] Ensure connected
+
+        // [NEW] Reset sync state when joining a new room
+        lastSeqRef.current = 0;
+        masterEpochRef.current = 0;
+
         socket.emit('join_room', { roomId, username: username.trim() || 'Anonymous' });
         setJoinedRoom(roomId);
+
+        // [NEW] Re-sync clock when joining a room for fresh calibration
+        performClockSync(socket);
     };
+
+    // [NEW] Periodic clock re-synchronization (every 30 seconds while in room)
+    useEffect(() => {
+        if (!socket || !joinedRoom) return;
+
+        const resyncInterval = setInterval(() => {
+            performClockSync(socket);
+        }, 30000); // Re-sync every 30 seconds
+
+        return () => clearInterval(resyncInterval);
+    }, [socket, joinedRoom]);
 
     const handleSearch = async (queryOrEvent) => {
         let query = queryOrEvent;
@@ -251,36 +366,70 @@ export default function ListenTogether({
             }
         }
 
-        // Time Drift Sync
+        // Time Drift Sync (with clock offset compensation)
         // Only sync time if we are on the correct song!
         if (currentSong?.name === localName && localName) {
-            // Use localReceivedTime if available to avoid clock skew
-            const referenceTime = localReceivedTime || lastUpdated;
+            // [NEW] Use clock-adjusted time calculation
+            // serverTimestamp is the authoritative server time when the state was created
+            const serverTimestamp = serverState.serverTimestamp || localReceivedTime || lastUpdated;
 
-            // Calculate what the server time should be NOW
-            let serverTimeNow = timestamp;
+            // Calculate the elapsed time since the state was created
+            // Adjust for clock offset: localNow + offset ≈ serverNow
+            const localNow = Date.now();
+            const adjustedLocalNow = localNow + clockOffset; // What we think server time is now
+            const elapsedSinceUpdate = (adjustedLocalNow - serverTimestamp) / 1000;
+
+            // Calculate expected position based on master's timestamp + elapsed time
+            let expectedPosition = timestamp;
             if (isPlaying) {
-                serverTimeNow += (Date.now() - referenceTime) / 1000;
+                expectedPosition += elapsedSinceUpdate;
+            }
+
+            // [NEW] Apply latency compensation: pre-seek by half RTT
+            // This accounts for the time it takes for our seek command to reach Cider
+            const latencyCompensation = (rtt / 2) / 1000; // Convert ms to seconds
+            if (isPlaying) {
+                expectedPosition += latencyCompensation;
             }
 
             const localTime = ciderState.currentTime;
+            const diff = Math.abs(expectedPosition - localTime);
+
+            // [NEW] Three-tier drift threshold (like Spotify Jam)
+            // - Jitter threshold: 150ms (ignore - normal network variance)
+            // - Soft threshold: 150ms - 1s (could rate-adjust, but we just seek for now)
+            // - Hard threshold: > 1s (definitely seek)
+            const JITTER_THRESHOLD = 0.15; // 150ms - ignore
+            const SOFT_THRESHOLD = 0.5;    // 500ms - seek with logging
+            const HARD_THRESHOLD = 1.0;    // 1s - hard seek
 
             // Allow larger drift during song transitions (first 5 seconds)
-            const driftThreshold = (lastSongSync.current.id && (Date.now() - lastSongSync.current.time) < 5000) ? 5 : 3;
-            const diff = Math.abs(serverTimeNow - localTime);
+            const isTransitioning = lastSongSync.current.id && (Date.now() - lastSongSync.current.time) < 5000;
+            const effectiveThreshold = isTransitioning ? HARD_THRESHOLD * 2 : SOFT_THRESHOLD;
 
-            if (diff > driftThreshold || isNewSeek) { // [Fix] Always sync if it's a confirmed NEW seek
-                // Throttle Seek: Only seek once per 3 seconds to avoid spamming
-                // UNLESS it is a confirmd NEW seek from Master (Bypass Throttle)
+            // [NEW] Smarter sync logic
+            if (isNewSeek || diff > effectiveThreshold) {
+                // Only log if drift is significant
+                if (diff > JITTER_THRESHOLD) {
+                    console.log(`Sync: Drift detected (${diff.toFixed(2)}s). Expected: ${expectedPosition.toFixed(2)}s, Local: ${localTime.toFixed(2)}s, Offset: ${clockOffset}ms, RTT: ${rtt}ms`);
+                }
+
+                // Throttle Seek: Only seek once per 1.5 seconds (reduced from 3s) to avoid spamming
+                // UNLESS it is a confirmed NEW seek from Master (Bypass Throttle)
                 const now = Date.now();
-                if ((now - lastSeekSync.current > 3000) || isNewSeek) {
+                const seekThrottle = isNewSeek ? 0 : 1500;
+                if ((now - lastSeekSync.current > seekThrottle) || isNewSeek) {
                     lastSeekSync.current = now;
-                    onRemoteAction('seek', serverTimeNow);
+
+                    // Only seek if drift exceeds jitter threshold (skip micro-corrections)
+                    if (diff > JITTER_THRESHOLD || isNewSeek) {
+                        onRemoteAction('seek', expectedPosition);
+                    }
                 }
             }
         }
 
-    }, [serverState, ciderState, masterId, socket, joinedRoom]);
+    }, [serverState, ciderState, masterId, socket, joinedRoom, clockOffset, rtt]);
 
     // Handle Server Requests (Master Only)
     useEffect(() => {
@@ -399,6 +548,7 @@ export default function ListenTogether({
                     console.log("📡 Master Broadcasting - Song:", ciderStateRef.current.nowPlaying?.name, "| ID:", ciderStateRef.current.nowPlaying?.id, "| playParams.id:", ciderStateRef.current.nowPlaying?.playParams?.id);
                     socket.emit('master_state_update', {
                         roomId: joinedRoom,
+                        masterEpoch: masterEpochRef.current, // [NEW] Include epoch for validation
                         state: {
                             queue: upNextList,
                             history: historyList,
@@ -590,6 +740,11 @@ export default function ListenTogether({
                             setServerState(null);
                             setUsers([]);
                             setError('');
+                            // [NEW] Reset sync state on leave
+                            lastSeqRef.current = 0;
+                            masterEpochRef.current = 0;
+                            setClockOffset(0);
+                            setRtt(100);
                         }} className="text-red-400 hover:text-red-300 p-1">
                             <LogOut size={14} />
                         </button>
