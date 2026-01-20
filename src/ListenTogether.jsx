@@ -402,9 +402,10 @@ export default function ListenTogether({
             return;
         }
 
-        // [Fix] Smart Guard: Check if this is a NEW seek or just a tick
-        const serverSeekTS = serverState.playback?.lastSeekTimestamp || 0;
-        const isNewSeek = serverSeekTS !== lastServerSeekTSRef.current;
+        // [Fix] Smart Guard: Check if this is a NEW seek from master
+        // BUG FIX: serverState IS the playback object, not a wrapper
+        const serverSeekTS = serverState?.lastSeekTimestamp || 0;
+        const isNewSeek = serverSeekTS !== lastServerSeekTSRef.current && serverSeekTS > 0;
 
         // [Fix] Inbound Sync Debounce: Ignore Master updates for 8.5s after manual seek
         // UNLESS it's a confirmed NEW seek from the Master
@@ -478,81 +479,53 @@ export default function ListenTogether({
             }
         }
 
-        // Time Drift Sync (with clock offset compensation)
-        // Only sync time if we are on the correct song!
+        // Time Sync - EVENT-BASED ONLY
+        // Only sync on: (1) master seek, (2) song start, (3) extreme drift
+        // NO continuous drift correction - it causes oscillation due to clock imprecision
         if (currentSong?.name === localName && localName) {
-            // [NEW] Use clock-adjusted time calculation
-            // serverTimestamp is the authoritative server time when the state was created
-            const serverTimestamp = serverState.serverTimestamp || localReceivedTime || lastUpdated;
+            // Simple elapsed time calculation (no clock sync complexity)
+            const referenceTime = localReceivedTime || lastUpdated;
+            const elapsedSinceUpdate = (Date.now() - referenceTime) / 1000;
 
-            // Calculate the elapsed time since the state was created
-            // Adjust for clock offset: localNow + offset ≈ serverNow
-            const localNow = Date.now();
-            const adjustedLocalNow = localNow + clockOffset; // What we think server time is now
-            const elapsedSinceUpdate = (adjustedLocalNow - serverTimestamp) / 1000;
-
-            // Calculate expected position based on master's timestamp + elapsed time
+            // Expected position = master's timestamp + elapsed time
             let expectedPosition = timestamp;
             if (isPlaying) {
                 expectedPosition += elapsedSinceUpdate;
             }
 
-            // [NEW] Apply latency compensation: pre-seek by half RTT
-            // This accounts for the time it takes for our seek command to reach Cider
-            const latencyCompensation = (rtt / 2) / 1000; // Convert ms to seconds
-            if (isPlaying) {
-                expectedPosition += latencyCompensation;
-            }
-
             const localTime = ciderState.currentTime;
             const diff = Math.abs(expectedPosition - localTime);
-            const direction = expectedPosition > localTime ? 'ahead' : 'behind'; // master is ahead/behind local
 
-            // [NEW] Three-tier drift threshold (like Spotify Jam)
-            // - Jitter threshold: 150ms (ignore - normal network variance)
-            // - Soft threshold: 150ms - 1s (could rate-adjust, but we just seek for now)
-            // - Hard threshold: > 1s (definitely seek)
-            const JITTER_THRESHOLD = 0.15; // 150ms - ignore
-            const SOFT_THRESHOLD = 0.5;    // 500ms - seek with logging
-            const HARD_THRESHOLD = 1.0;    // 1s - hard seek
-
-            // Allow larger drift during song transitions (first 5 seconds)
-            const isTransitioning = lastSongSync.current.id && (Date.now() - lastSongSync.current.time) < 5000;
-            const effectiveThreshold = isTransitioning ? HARD_THRESHOLD * 2 : SOFT_THRESHOLD;
-
-            // [DEBUG] Track drift for summary (compact logging)
+            // Track drift for debug summary
             trackDrift(diff);
 
-            // [NEW] Smarter sync logic
-            if (isNewSeek || diff > effectiveThreshold) {
-                // Only log if drift is significant
-                if (diff > JITTER_THRESHOLD) {
-                    console.log(`Sync: Drift detected (${diff.toFixed(2)}s). Expected: ${expectedPosition.toFixed(2)}s, Local: ${localTime.toFixed(2)}s, Offset: ${clockOffset}ms, RTT: ${rtt}ms`);
-                }
+            // Check if song just started (first 3 seconds after song sync)
+            const justStartedSong = lastSongSync.current.id &&
+                (Date.now() - lastSongSync.current.time) < 3000;
 
-                // Throttle Seek: Only seek once per 1.5 seconds (reduced from 3s) to avoid spamming
-                // UNLESS it is a confirmed NEW seek from Master (Bypass Throttle)
+            // ONLY sync on discrete events, not continuous drift
+            const shouldSync = isNewSeek ||                    // Master explicitly sought
+                              (justStartedSong && diff > 2);   // Initial sync after song change
+
+            // Fallback: extreme drift (>10s) - something went very wrong
+            const extremeDrift = diff > 10;
+
+            if (shouldSync || extremeDrift) {
                 const now = Date.now();
-                const seekThrottle = isNewSeek ? 0 : 1500;
-                const timeSinceLastSeek = now - lastSeekSync.current;
-                const willSeek = (timeSinceLastSeek > seekThrottle) || isNewSeek;
-                const passesJitterThreshold = diff > JITTER_THRESHOLD || isNewSeek;
-
-                if (willSeek) {
+                // Throttle to prevent rapid successive seeks
+                if (now - lastSeekSync.current > 1000 || isNewSeek) {
                     lastSeekSync.current = now;
 
-                    // Only seek if drift exceeds jitter threshold (skip micro-corrections)
-                    if (passesJitterThreshold) {
-                        // [DEBUG] Compact seek logging
-                        const reason = isNewSeek ? 'master-seek' : (isTransitioning ? 'transition' : 'drift');
-                        logSeek(localTime, expectedPosition, diff, reason);
-                        onRemoteAction('seek', expectedPosition);
-                    }
+                    const reason = isNewSeek ? 'master-seek' :
+                                  (justStartedSong ? 'song-start' : 'extreme-drift');
+                    logSeek(localTime, expectedPosition, diff, reason);
+                    console.log(`Sync: ${reason} - seeking from ${localTime.toFixed(1)}s to ${expectedPosition.toFixed(1)}s (Δ${diff.toFixed(1)}s)`);
+                    onRemoteAction('seek', expectedPosition);
                 }
             }
         }
 
-    }, [serverState, ciderState, masterId, socket, joinedRoom, clockOffset, rtt]);
+    }, [serverState, ciderState, masterId, socket, joinedRoom]);
 
     // Handle Server Requests (Master Only)
     useEffect(() => {
