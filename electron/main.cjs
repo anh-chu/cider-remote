@@ -10,6 +10,9 @@ let isQuitting = false;
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = true;
 
+// Store channel preference
+let updateChannel = 'latest'; // Default
+
 function createTray() {
     // Create tray with app icon
     let iconPath = path.join(__dirname, 'assets/icon.ico');
@@ -168,6 +171,18 @@ ipcMain.on('install-update', () => {
 
 ipcMain.handle('get-app-version', () => {
     return app.getVersion();
+});
+
+ipcMain.on('set-update-channel', (event, channel) => {
+    if (channel === 'latest' || channel === 'dev') {
+        updateChannel = channel;
+        autoUpdater.channel = channel;
+        console.log('Update channel set to:', channel);
+    }
+});
+
+ipcMain.handle('get-update-channel', () => {
+    return updateChannel;
 });
 
 // Window control handlers

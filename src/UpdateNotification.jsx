@@ -7,6 +7,7 @@ const UpdateNotification = () => {
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [showNotification, setShowNotification] = useState(false);
   const [appVersion, setAppVersion] = useState(null);
+  const [updateChannel, setUpdateChannel] = useState('latest');
 
   useEffect(() => {
     // Check if running in Electron
@@ -25,6 +26,24 @@ const UpdateNotification = () => {
     };
 
     fetchVersion();
+
+    // Load channel preference from localStorage
+    const loadChannel = () => {
+      try {
+        const saved = localStorage.getItem('update_channel');
+        const channel = saved || 'latest';
+        setUpdateChannel(channel);
+        // Send to main process
+        if (window.electron) {
+          window.electron.ipcRenderer.send('set-update-channel', channel);
+        }
+      } catch (err) {
+        console.error('Failed to load update channel:', err);
+        setUpdateChannel('latest');
+      }
+    };
+
+    loadChannel();
 
     const handleUpdateStatus = (event, { event: updateEvent, data }) => {
       console.log('Update event:', updateEvent, data);
@@ -105,6 +124,25 @@ const UpdateNotification = () => {
     setShowNotification(false);
   };
 
+  const handleChannelChange = (newChannel) => {
+    if (updateChannel === newChannel) return;
+
+    try {
+      localStorage.setItem('update_channel', newChannel);
+      setUpdateChannel(newChannel);
+      window.electron.ipcRenderer.send('set-update-channel', newChannel);
+
+      // Show notification and trigger update check
+      setShowNotification(true);
+      setUpdateState('checking');
+      setTimeout(() => {
+        window.electron.ipcRenderer.send('check-for-updates');
+      }, 500);
+    } catch (err) {
+      console.error('Failed to change channel:', err);
+    }
+  };
+
   if (!showNotification) {
     return (
       <div className="fixed bottom-4 right-4 group">
@@ -118,6 +156,9 @@ const UpdateNotification = () => {
           <div className="absolute bottom-1/2 right-full mr-3 transform translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
             <div className="bg-black/90 text-white text-sm px-3 py-2 rounded-lg border border-white/10 backdrop-blur-xl">
               Current: v{appVersion}
+              <div className="text-xs text-white/60 mt-1">
+                Channel: {updateChannel}
+              </div>
               <div className="absolute left-full top-1/2 transform -translate-y-1/2 border-4 border-transparent border-l-black/90"></div>
             </div>
           </div>
@@ -154,6 +195,39 @@ const UpdateNotification = () => {
           <X size={18} />
         </button>
       </div>
+
+      {/* Channel Switcher */}
+      <div className="flex gap-2 mb-3">
+        <button
+          onClick={() => handleChannelChange('latest')}
+          className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+            updateChannel === 'latest'
+              ? 'bg-blue-500 text-white'
+              : 'bg-white/10 text-white/70 hover:bg-white/20'
+          }`}
+        >
+          Release
+        </button>
+        <button
+          onClick={() => handleChannelChange('dev')}
+          className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+            updateChannel === 'dev'
+              ? 'bg-purple-500 text-white'
+              : 'bg-white/10 text-white/70 hover:bg-white/20'
+          }`}
+        >
+          Dev
+        </button>
+      </div>
+
+      {/* Dev Channel Warning */}
+      {updateChannel === 'dev' && (
+        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-2 mb-3">
+          <p className="text-xs text-yellow-400">
+            ⚠️ Dev builds may contain unstable features or bugs
+          </p>
+        </div>
+      )}
 
       <div className="text-sm text-white/70 mb-3">
         {updateState === 'checking' && (
