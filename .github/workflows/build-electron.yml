@@ -186,26 +186,7 @@ jobs:
           If you already have Cider Remote installed, the app will automatically check for this update on startup and notify you.
           EOF
 
-      - name: Create Release (dev)
-        if: needs.determine-channel.outputs.channel == 'dev'
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            artifacts/macos/*.dmg
-            artifacts/macos/*.zip
-            artifacts/macos/dev-mac.yml
-            artifacts/windows/*.exe
-            artifacts/windows/*.blockmap
-            artifacts/windows/dev.yml
-          draft: false
-          prerelease: true
-          generate_release_notes: true
-          body_path: release-body.md
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create Release (stable)
-        if: needs.determine-channel.outputs.channel == 'latest'
+      - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
@@ -216,7 +197,7 @@ jobs:
             artifacts/windows/*.blockmap
             artifacts/windows/latest.yml
           draft: false
-          prerelease: false
+          prerelease: ${{ needs.determine-channel.outputs.channel == 'dev' }}
           generate_release_notes: true
           body_path: release-body.md
         env:
