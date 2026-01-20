@@ -11,7 +11,7 @@
     "build": "vite build",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
-    "electron:dev": "concurrently \"cross-env BROWSER=none bun dev\" \"wait-on http://localhost:5173 && cross-env ELECTRON_START_URL=http://localhost:5173 electron .\"",
+    "electron:dev": "concurrently \"cross-env BROWSER=none yarn dev\" \"sleep 5 && cross-env ELECTRON_START_URL=http://localhost:5173 electron .\"",
     "electron:build-mac": "vite build && electron-builder --mac --publish never",
     "electron:build-win": "vite build && electron-builder --win --publish never",
     "electron:publish-mac": "vite build && electron-builder --mac --publish always",
@@ -40,7 +40,8 @@
           "target": "nsis",
           "arch": ["x64"]
         }
-      ]
+      ],
+      "icon": "electron/assets/icon.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -60,6 +61,7 @@
           "arch": ["x64", "arm64"]
         }
       ],
+      "icon": "electron/assets/icon.icns",
       "category": "public.app-category.utilities"
     },
     "dmg": {
