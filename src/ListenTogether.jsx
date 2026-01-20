@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
-import { Users, LogIn, Share2, PlayCircle, Plus, Search, X, Music, Trash2, GripVertical, Crown, Settings, LogOut, AlertTriangle, Play, ListPlus, ListMusic } from 'lucide-react';
+import { Users, LogIn, Share2, PlayCircle, Plus, Search, X, Music, Trash2, GripVertical, Crown, Settings, LogOut, AlertTriangle, Play, ListPlus, ListMusic, Bug, Download } from 'lucide-react';
 
 export default function ListenTogether({
     isConnected,
@@ -51,6 +51,62 @@ export default function ListenTogether({
     const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
     const [activeTab, setActiveTab] = useState('queue'); // [NEW] Added for Tabs UI
 
+    // [DEBUG] Debug mode state
+    const [debugMode, setDebugMode] = useState(() => {
+        try {
+            return localStorage.getItem('cider_debug_mode') === 'true';
+        } catch (e) {
+            return false;
+        }
+    });
+    const debugModeRef = useRef(debugMode); // Ref for use in closures
+    debugModeRef.current = debugMode; // Keep ref in sync with state
+    const debugLogsRef = useRef([]);
+    const MAX_DEBUG_LOGS = 1000; // Keep last 1000 entries
+
+    const debugLog = (category, data) => {
+        if (!debugModeRef.current) return;
+        const entry = {
+            time: Date.now(),
+            timeISO: new Date().toISOString(),
+            category,
+            ...data
+        };
+        debugLogsRef.current.push(entry);
+        // Trim if too large
+        if (debugLogsRef.current.length > MAX_DEBUG_LOGS) {
+            debugLogsRef.current = debugLogsRef.current.slice(-MAX_DEBUG_LOGS);
+        }
+        console.log(`[DEBUG:${category}]`, data);
+    };
+
+    const exportDebugLogs = () => {
+        const logs = debugLogsRef.current;
+        const blob = new Blob([JSON.stringify(logs, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `cider-sync-debug-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const toggleDebugMode = () => {
+        const newValue = !debugMode;
+        setDebugMode(newValue);
+        try {
+            localStorage.setItem('cider_debug_mode', newValue.toString());
+        } catch (e) {
+            console.error('Failed to save debug mode:', e);
+        }
+        if (newValue) {
+            debugLogsRef.current = []; // Clear logs when enabling
+            console.log('[DEBUG] Debug mode enabled - logs will be collected');
+        } else {
+            console.log('[DEBUG] Debug mode disabled');
+        }
+    };
+
     // [NEW] Clock Sync Protocol
     const performClockSync = (s, numSamples = 5) => {
         let sampleIndex = 0;
@@ -86,6 +142,8 @@ export default function ListenTogether({
                 const medianOffset = sortedOffsets[Math.floor(sortedOffsets.length / 2)];
                 const medianRtt = sortedRtts[Math.floor(sortedRtts.length / 2)];
 
+                const prevOffset = clockOffset;
+                const prevRtt = rtt;
                 setClockOffset(medianOffset);
                 setRtt(medianRtt);
                 clockSyncSamplesRef.current = samples;
@@ -94,6 +152,17 @@ export default function ListenTogether({
                 s.emit('time_sync_report', { offset: medianOffset, rtt: medianRtt });
 
                 console.log(`Clock sync complete: offset=${medianOffset}ms, rtt=${medianRtt}ms`);
+
+                // [DEBUG] Log clock sync results with change from previous
+                debugLog('CLOCK_SYNC', {
+                    samples: samples.map(s => ({ offset: s.offset, rtt: s.rtt })),
+                    medianOffset,
+                    medianRtt,
+                    prevOffset,
+                    prevRtt,
+                    offsetChange: medianOffset - prevOffset,
+                    rttChange: medianRtt - prevRtt
+                });
 
                 // Remove listener after sync is complete
                 s.off('time_sync_response', handleResponse);
@@ -154,10 +223,26 @@ export default function ListenTogether({
                 console.log("📥 Slave: Received Sync State. Queue Len:", q.length, "Source:", state.source, "Seq:", state.playback?.seq);
                 console.log("📥 Slave: Received Song:", state.playback?.currentSong?.name, "| ID:", state.playback?.currentSong?.id, "| playParams.id:", state.playback?.currentSong?.playParams?.id);
 
+                // [DEBUG] Log incoming sync state
+                debugLog('SYNC_STATE_RECEIVED', {
+                    source: state.source,
+                    seq: state.playback?.seq,
+                    masterEpoch: state.masterEpoch,
+                    serverTime: state.serverTime,
+                    playback: state.playback ? {
+                        isPlaying: state.playback.isPlaying,
+                        timestamp: state.playback.timestamp,
+                        lastUpdated: state.playback.lastUpdated,
+                        lastSeekTimestamp: state.playback.lastSeekTimestamp,
+                        currentSong: state.playback.currentSong?.name
+                    } : null
+                });
+
                 // [NEW] Check sequence number - reject out-of-order updates
                 const incomingSeq = state.playback?.seq || 0;
                 if (incomingSeq > 0 && incomingSeq <= lastSeqRef.current) {
                     console.log(`Rejecting out-of-order sync_state (seq ${incomingSeq} <= ${lastSeqRef.current})`);
+                    debugLog('SYNC_STATE_REJECTED', { reason: 'out-of-order', incomingSeq, lastSeq: lastSeqRef.current });
                     return;
                 }
                 lastSeqRef.current = incomingSeq;
@@ -437,6 +522,7 @@ export default function ListenTogether({
 
             const localTime = ciderState.currentTime;
             const diff = Math.abs(expectedPosition - localTime);
+            const direction = expectedPosition > localTime ? 'ahead' : 'behind'; // master is ahead/behind local
 
             // [NEW] Three-tier drift threshold (like Spotify Jam)
             // - Jitter threshold: 150ms (ignore - normal network variance)
@@ -450,6 +536,26 @@ export default function ListenTogether({
             const isTransitioning = lastSongSync.current.id && (Date.now() - lastSongSync.current.time) < 5000;
             const effectiveThreshold = isTransitioning ? HARD_THRESHOLD * 2 : SOFT_THRESHOLD;
 
+            // [DEBUG] Log every sync calculation
+            debugLog('SYNC_CALC', {
+                masterTimestamp: timestamp,
+                serverTimestamp,
+                localReceivedTime,
+                lastUpdated,
+                localNow,
+                clockOffset,
+                rtt,
+                elapsedSinceUpdate: elapsedSinceUpdate.toFixed(3),
+                latencyCompensation: latencyCompensation.toFixed(3),
+                expectedPosition: expectedPosition.toFixed(3),
+                localTime: localTime.toFixed(3),
+                diff: diff.toFixed(3),
+                direction,
+                isNewSeek,
+                isTransitioning,
+                effectiveThreshold
+            });
+
             // [NEW] Smarter sync logic
             if (isNewSeek || diff > effectiveThreshold) {
                 // Only log if drift is significant
@@ -461,11 +567,34 @@ export default function ListenTogether({
                 // UNLESS it is a confirmed NEW seek from Master (Bypass Throttle)
                 const now = Date.now();
                 const seekThrottle = isNewSeek ? 0 : 1500;
-                if ((now - lastSeekSync.current > seekThrottle) || isNewSeek) {
+                const timeSinceLastSeek = now - lastSeekSync.current;
+                const willSeek = (timeSinceLastSeek > seekThrottle) || isNewSeek;
+                const passesJitterThreshold = diff > JITTER_THRESHOLD || isNewSeek;
+
+                // [DEBUG] Log seek decision
+                debugLog('SEEK_DECISION', {
+                    diff: diff.toFixed(3),
+                    direction,
+                    effectiveThreshold,
+                    timeSinceLastSeek,
+                    seekThrottle,
+                    willSeek,
+                    passesJitterThreshold,
+                    finalDecision: willSeek && passesJitterThreshold ? 'SEEK' : 'SKIP'
+                });
+
+                if (willSeek) {
                     lastSeekSync.current = now;
 
                     // Only seek if drift exceeds jitter threshold (skip micro-corrections)
-                    if (diff > JITTER_THRESHOLD || isNewSeek) {
+                    if (passesJitterThreshold) {
+                        // [DEBUG] Log actual seek
+                        debugLog('SEEK_EXECUTE', {
+                            from: localTime.toFixed(3),
+                            to: expectedPosition.toFixed(3),
+                            diff: diff.toFixed(3),
+                            direction
+                        });
                         onRemoteAction('seek', expectedPosition);
                     }
                 }
@@ -817,6 +946,22 @@ export default function ListenTogether({
                         <button onClick={() => setShowSettings(!showSettings)} className="text-white/20 hover:text-white p-1">
                             <Settings size={14} />
                         </button>
+                        <button
+                            onClick={toggleDebugMode}
+                            className={`p-1 ${debugMode ? 'text-yellow-400' : 'text-white/20 hover:text-white'}`}
+                            title={debugMode ? 'Debug mode ON - click to disable' : 'Enable debug mode'}
+                        >
+                            <Bug size={14} />
+                        </button>
+                        {debugMode && (
+                            <button
+                                onClick={exportDebugLogs}
+                                className="text-yellow-400 hover:text-yellow-300 p-1"
+                                title="Export debug logs"
+                            >
+                                <Download size={14} />
+                            </button>
+                        )}
                     </div>
                 ) : (
                     <div className="flex items-center gap-3">
@@ -847,6 +992,22 @@ export default function ListenTogether({
                                 })()}
                             </div>
                         </div>
+                        <button
+                            onClick={toggleDebugMode}
+                            className={`p-1 ${debugMode ? 'text-yellow-400' : 'text-white/20 hover:text-white'}`}
+                            title={debugMode ? 'Debug mode ON - click to disable' : 'Enable debug mode'}
+                        >
+                            <Bug size={14} />
+                        </button>
+                        {debugMode && (
+                            <button
+                                onClick={exportDebugLogs}
+                                className="text-yellow-400 hover:text-yellow-300 p-1"
+                                title={`Export debug logs (${debugLogsRef.current.length} entries)`}
+                            >
+                                <Download size={14} />
+                            </button>
+                        )}
                         <button onClick={() => {
                             if (socket) {
                                 socket.emit('leave_room', { roomId: joinedRoom });
