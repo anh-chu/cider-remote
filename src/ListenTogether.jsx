@@ -35,6 +35,7 @@ export default function ListenTogether({
     const [serverState, setServerState] = useState(null);
     const [error, setError] = useState('');
     const [serverConnectionStatus, setServerConnectionStatus] = useState('disconnected'); // 'disconnected', 'connecting', 'connected', 'error'
+    const [reconnectAttempt, setReconnectAttempt] = useState(0);
 
     // [NEW] Clock Sync State
     const [clockOffset, setClockOffset] = useState(0); // Estimated offset between local and server time (ms)
@@ -42,6 +43,7 @@ export default function ListenTogether({
     const clockSyncSamplesRef = useRef([]); // Store samples for median filtering
     const lastSeqRef = useRef(0); // [NEW] Track last seen sequence number
     const masterEpochRef = useRef(0); // [NEW] Track current master epoch
+    const pendingRejoinRef = useRef(null); // { roomId, username, previousSocketId }
 
     // Search State
     const [showSearch, setShowSearch] = useState(false);
@@ -192,7 +194,12 @@ export default function ListenTogether({
     const connect = async () => {
         try {
             setServerConnectionStatus('connecting');
-            const s = io(serverUrl);
+            const s = io(serverUrl, {
+                reconnection: true,
+                reconnectionAttempts: 10,
+                reconnectionDelay: 1000,
+                reconnectionDelayMax: 5000,
+            });
 
             s.on('connect', () => {
                 console.log('Connected to Coordinator');
@@ -208,12 +215,56 @@ export default function ListenTogether({
                 setError(`Server error: ${error.message || 'Connection failed'}`);
             });
 
+            // Reconnection events
+            s.io.on('reconnect_attempt', (attempt) => {
+                console.log('Reconnection attempt:', attempt);
+                setReconnectAttempt(attempt);
+                setServerConnectionStatus('reconnecting');
+            });
+
+            s.io.on('reconnect', () => {
+                console.log('Reconnected to server');
+                setReconnectAttempt(0);
+                setServerConnectionStatus('connected');
+
+                // Auto-rejoin room if we were in one
+                if (pendingRejoinRef.current) {
+                    const { roomId, username, previousSocketId } = pendingRejoinRef.current;
+                    console.log('Auto-rejoining room:', roomId);
+                    s.emit('rejoin_room', { roomId, username, previousSocketId });
+                    pendingRejoinRef.current = null;
+                }
+            });
+
+            s.io.on('reconnect_failed', () => {
+                console.log('Reconnection failed after all attempts');
+                setServerConnectionStatus('error');
+                setError('Connection lost. Please reconnect manually.');
+                pendingRejoinRef.current = null;
+            });
+
             s.on('disconnect', (reason) => {
                 console.log('Disconnected from Coordinator:', reason);
-                setServerConnectionStatus('disconnected');
+
+                // Save room info for auto-rejoin (only for recoverable disconnects)
+                if (joinedRoom && reason !== 'io client disconnect') {
+                    pendingRejoinRef.current = {
+                        roomId: joinedRoom,
+                        username: username || 'Anonymous',
+                        previousSocketId: s.id
+                    };
+                    console.log('Saved room info for auto-rejoin:', pendingRejoinRef.current);
+                }
+
+                // Don't clear joinedRoom state yet - wait for reconnect attempt results
                 if (reason === 'io server disconnect') {
+                    setServerConnectionStatus('disconnected');
                     setError('Server disconnected');
-                } else if (reason === 'transport close') {
+                } else if (reason === 'transport close' || reason === 'ping timeout') {
+                    setServerConnectionStatus('reconnecting');
+                    // Don't set error yet, reconnection will be attempted
+                } else {
+                    setServerConnectionStatus('disconnected');
                     setError('Connection lost');
                 }
             });
@@ -295,6 +346,17 @@ export default function ListenTogether({
                     await onRemoteAction('pause');
                 } catch (e) {
                     console.error('Failed to pause on master disconnect:', e);
+                }
+            });
+
+            s.on('rejoin_success', ({ masterId: newMasterId, masterEpoch: newEpoch, wasMasterRestored }) => {
+                console.log('Rejoin successful. Master restored:', wasMasterRestored);
+                if (wasMasterRestored) {
+                    console.log('Master role restored after reconnection');
+                }
+                setMasterId(newMasterId);
+                if (newEpoch !== undefined) {
+                    masterEpochRef.current = newEpoch;
                 }
             });
 
@@ -752,6 +814,8 @@ export default function ListenTogether({
                 return { text: 'Remote Server Connected', bgColor: 'bg-green-500', textColor: 'text-green-400', pulse: true };
             case 'connecting':
                 return { text: 'Remote Server Connecting...', bgColor: 'bg-yellow-500', textColor: 'text-yellow-400', pulse: true };
+            case 'reconnecting':
+                return { text: `Reconnecting... (${reconnectAttempt})`, bgColor: 'bg-yellow-500', textColor: 'text-yellow-400', pulse: true };
             case 'disconnected':
                 return { text: 'Remote Server Disconnected', bgColor: 'bg-red-500', textColor: 'text-red-400', pulse: false };
             case 'error':

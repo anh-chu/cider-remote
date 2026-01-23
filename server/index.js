@@ -22,7 +22,9 @@ const io = new Server(server, {
     cors: {
         origin: "*", // Allow all origins for now (dev)
         methods: ["GET", "POST"]
-    }
+    },
+    pingInterval: 5000,   // Ping every 5 seconds
+    pingTimeout: 10000,   // 10 second timeout (allows 2 missed pings)
 });
 
 // --- State ---
@@ -40,6 +42,8 @@ const rooms = {};
 //   },
 //   users: [], // list of socket IDs
 //   masterEpoch: 0 // [NEW] Increments when master changes
+//   masterGraceTimeout: null, // [NEW] Timeout for master grace period
+//   pendingMasterId: null // [NEW] Tracks master ID during grace period
 // }
 
 // --- Client Clock Offsets ---
@@ -64,7 +68,9 @@ const getRoom = (roomId) => {
             },
             users: [],
             masterId: null,
-            masterEpoch: 0 // [NEW] Increments when master changes
+            masterEpoch: 0, // [NEW] Increments when master changes
+            masterGraceTimeout: null, // [NEW] Timeout for master grace period
+            pendingMasterId: null // [NEW] Tracks master ID during grace period
         };
         console.log(`Room created: ${roomId}`);
     }
@@ -133,6 +139,57 @@ io.on('connection', (socket) => {
         });
 
         console.log(`User ${socket.id} (${username}) joined room ${roomId}`);
+    });
+
+    // [NEW] Master Rejoin Handler (within grace period)
+    socket.on('rejoin_room', ({ roomId, username, previousSocketId }) => {
+        socket.join(roomId);
+        const room = getRoom(roomId);
+
+        // Check if this is the previous master rejoining within grace period
+        if (room.pendingMasterId === previousSocketId && room.masterGraceTimeout !== null) {
+            // Clear the grace timeout
+            clearTimeout(room.masterGraceTimeout);
+            room.masterGraceTimeout = null;
+
+            // Restore as master with new socket ID
+            room.masterId = socket.id;
+            room.pendingMasterId = null;
+
+            console.log(`Master reconnected within grace period: ${socket.id} (was ${previousSocketId}) in room ${roomId}`);
+
+            // Restore user in list (replace old socket ID entry if exists)
+            const oldMasterIndex = room.users.findIndex(u => u.id === previousSocketId);
+            if (oldMasterIndex !== -1) {
+                room.users.splice(oldMasterIndex, 1);
+            }
+            const existingIndex = room.users.findIndex(u => u.id === socket.id);
+            if (existingIndex !== -1) {
+                room.users.splice(existingIndex, 1);
+            }
+            room.users.push({ id: socket.id, name: username || 'Anonymous' });
+
+            // Send current state to master
+            socket.emit('sync_state', {
+                queue: room.queue,
+                history: room.history,
+                playback: room.playback,
+                users: room.users,
+                masterId: room.masterId,
+                masterEpoch: room.masterEpoch,
+                serverTime: Date.now()
+            });
+
+            // Notify all users of state restoration
+            io.to(roomId).emit('users_update', room.users);
+            io.to(roomId).emit('master_update', {
+                masterId: room.masterId,
+                masterEpoch: room.masterEpoch
+            });
+        } else {
+            // Grace period expired or not in grace period, treat as normal join
+            socket.emit('join_room', { roomId, username });
+        }
     });
 
     socket.on('transfer_master', ({ roomId, targetId }) => {
@@ -228,6 +285,13 @@ io.on('connection', (socket) => {
 
             // Assign new master if users remain
             if (room.users.length > 0) {
+                // Clear any existing grace timeout
+                if (room.masterGraceTimeout) {
+                    clearTimeout(room.masterGraceTimeout);
+                    room.masterGraceTimeout = null;
+                }
+                room.pendingMasterId = null;
+
                 room.masterId = room.users[0].id;
                 room.masterEpoch += 1; // [NEW] Increment epoch on master reassignment
                 console.log(`Room ${roomId}: Master reassigned to ${room.masterId} (epoch: ${room.masterEpoch})`);
@@ -235,7 +299,11 @@ io.on('connection', (socket) => {
                 // Pause music for all remaining users when master leaves
                 io.to(roomId).emit('master_paused');
             } else {
-                // Room is empty, destroy it
+                // Room is empty, destroy it and clear grace timeout
+                if (room.masterGraceTimeout) {
+                    clearTimeout(room.masterGraceTimeout);
+                    room.masterGraceTimeout = null;
+                }
                 delete rooms[roomId];
                 console.log(`Room ${roomId}: Master left. Room destroyed (empty).`);
             }
@@ -264,25 +332,50 @@ io.on('connection', (socket) => {
                 const wasMaster = room.masterId === socket.id;
                 room.users.splice(index, 1);
 
-                // Reassign Master if needed
+                // Handle Master Disconnection with Grace Period
                 if (wasMaster) {
                     if (room.users.length > 0) {
-                        room.masterId = room.users[0].id;
-                        room.masterEpoch += 1; // [NEW] Increment epoch on master reassignment
+                        // Set grace period for master to rejoin
+                        room.pendingMasterId = socket.id;
+                        console.log(`Room ${roomId}: Master ${socket.id} disconnected. Starting 15s grace period...`);
 
-                        // Pause music for all remaining users when master disconnects
-                        io.to(roomId).emit('master_paused');
-                        io.to(roomId).emit('master_update', {
-                            masterId: room.masterId,
-                            masterEpoch: room.masterEpoch
-                        });
+                        // 15-second grace period before reassigning master
+                        room.masterGraceTimeout = setTimeout(() => {
+                            // Grace period expired, reassign to next user
+                            if (rooms[roomId] && room.pendingMasterId === socket.id) {
+                                room.masterId = room.users[0].id;
+                                room.pendingMasterId = null;
+                                room.masterGraceTimeout = null;
+                                room.masterEpoch += 1;
+
+                                console.log(`Room ${roomId}: Grace period expired. Master reassigned to ${room.masterId} (epoch: ${room.masterEpoch})`);
+
+                                // Pause music for all remaining users when grace period expires
+                                io.to(roomId).emit('master_paused');
+                                io.to(roomId).emit('master_update', {
+                                    masterId: room.masterId,
+                                    masterEpoch: room.masterEpoch
+                                });
+                            }
+                        }, 15000);
+
+                        // Notify users that master is temporarily unavailable (but don't pause yet)
+                        io.to(roomId).emit('users_update', room.users);
                     } else {
-                        // Room is empty, destroy it
+                        // Room is empty, destroy it and clear any timeouts
+                        if (room.masterGraceTimeout) {
+                            clearTimeout(room.masterGraceTimeout);
+                            room.masterGraceTimeout = null;
+                        }
                         delete rooms[roomId];
                         console.log(`Room ${roomId}: Last user disconnected. Room destroyed.`);
                     }
                 } else if (room.users.length === 0) {
                     // Non-master user left and room is now empty
+                    if (room.masterGraceTimeout) {
+                        clearTimeout(room.masterGraceTimeout);
+                        room.masterGraceTimeout = null;
+                    }
                     delete rooms[roomId];
                     console.log(`Room ${roomId}: Last user left. Room destroyed.`);
                 } else {
