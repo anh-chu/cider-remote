@@ -23,8 +23,8 @@ const io = new Server(server, {
         origin: "*", // Allow all origins for now (dev)
         methods: ["GET", "POST"]
     },
-    pingInterval: 5000,   // Ping every 5 seconds
-    pingTimeout: 10000,   // 10 second timeout (allows 2 missed pings)
+    pingInterval: 25000,  // Ping every 25 seconds (default)
+    pingTimeout: 20000,   // 20 second timeout (default)
 });
 
 // --- State ---
@@ -180,6 +180,13 @@ io.on('connection', (socket) => {
                 serverTime: Date.now()
             });
 
+            // [FIX] Emit rejoin_success to confirm master restoration
+            socket.emit('rejoin_success', {
+                masterId: room.masterId,
+                masterEpoch: room.masterEpoch,
+                wasMasterRestored: true
+            });
+
             // Notify all users of state restoration
             io.to(roomId).emit('users_update', room.users);
             io.to(roomId).emit('master_update', {
@@ -187,8 +194,49 @@ io.on('connection', (socket) => {
                 masterEpoch: room.masterEpoch
             });
         } else {
-            // Grace period expired or not in grace period, treat as normal join
-            socket.emit('join_room', { roomId, username });
+            // Grace period expired or not in grace period - perform actual join logic
+            console.log(`Rejoin as normal user: ${socket.id} (was ${previousSocketId}) in room ${roomId} - grace period expired or not master`);
+
+            // Remove existing if any (re-join)
+            const existingUserIndex = room.users.findIndex(u => u.id === socket.id);
+            if (existingUserIndex !== -1) {
+                room.users.splice(existingUserIndex, 1);
+            }
+
+            room.users.push({ id: socket.id, name: username || 'Anonymous' });
+
+            // Assign Master if none exists
+            if (!room.masterId) {
+                room.masterId = socket.id;
+                room.masterEpoch += 1;
+            }
+
+            // Send current state to rejoined user
+            socket.emit('sync_state', {
+                queue: room.queue,
+                history: room.history,
+                playback: room.playback,
+                users: room.users,
+                masterId: room.masterId,
+                masterEpoch: room.masterEpoch,
+                serverTime: Date.now()
+            });
+
+            // [FIX] Emit rejoin_success to confirm rejoin (but not as master)
+            socket.emit('rejoin_success', {
+                masterId: room.masterId,
+                masterEpoch: room.masterEpoch,
+                wasMasterRestored: false
+            });
+
+            // Notify others
+            io.to(roomId).emit('users_update', room.users);
+            io.to(roomId).emit('master_update', {
+                masterId: room.masterId,
+                masterEpoch: room.masterEpoch
+            });
+
+            console.log(`User ${socket.id} (${username}) rejoined room ${roomId}`);
         }
     });
 

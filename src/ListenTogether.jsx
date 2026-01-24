@@ -232,8 +232,11 @@ export default function ListenTogether({
                     const { roomId, username, previousSocketId } = pendingRejoinRef.current;
                     console.log('Auto-rejoining room:', roomId);
                     s.emit('rejoin_room', { roomId, username, previousSocketId });
-                    pendingRejoinRef.current = null;
+                    // [FIX] Don't clear pendingRejoinRef here - wait for rejoin_success
                 }
+
+                // [FIX] Re-sync clock after reconnection
+                performClockSync(s);
             });
 
             s.io.on('reconnect_failed', () => {
@@ -241,6 +244,10 @@ export default function ListenTogether({
                 setServerConnectionStatus('error');
                 setError('Connection lost. Please reconnect manually.');
                 pendingRejoinRef.current = null;
+                // [FIX] Clear room state on reconnect failure
+                setJoinedRoom(null);
+                setMasterId(null);
+                setUsers([]);
             });
 
             s.on('disconnect', (reason) => {
@@ -353,8 +360,13 @@ export default function ListenTogether({
                 console.log('Rejoin successful. Master restored:', wasMasterRestored);
                 if (wasMasterRestored) {
                     console.log('Master role restored after reconnection');
+                } else {
+                    console.log('Rejoined room as listener (grace period expired or was not master)');
                 }
+                // [FIX] Clear pending rejoin now that server confirmed
+                pendingRejoinRef.current = null;
                 setMasterId(newMasterId);
+                setError(''); // Clear any reconnection errors
                 if (newEpoch !== undefined) {
                     masterEpochRef.current = newEpoch;
                 }
