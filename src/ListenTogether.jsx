@@ -507,9 +507,11 @@ export default function ListenTogether({
         // Playback State Sync
         // Only sync if local state is valid (boolean)
         // AND we are not currently waiting for a song switch to complete (Debounce)
-        const isSongLoading = (Date.now() - lastSongSync.current.time) < 5000;
+        // [Fix] Increased grace period from 5s to 10s to let Cider fully load the song
+        const isSongLoading = (Date.now() - lastSongSync.current.time) < 10000;
 
         if (!isSongLoading && typeof ciderState.isPlaying === 'boolean' && isPlaying !== ciderState.isPlaying) {
+            console.log("Sync: Play state mismatch - Server:", isPlaying, "Local:", ciderState.isPlaying);
             onRemoteAction(isPlaying ? 'play' : 'pause');
         }
 
@@ -578,7 +580,9 @@ export default function ListenTogether({
         // Time Sync - EVENT-BASED ONLY
         // Only sync on: (1) master seek, (2) song start, (3) extreme drift
         // NO continuous drift correction - it causes oscillation due to clock imprecision
-        if (currentSong?.name === localName && localName) {
+        // [Fix] Don't apply time sync if we're still waiting for song to load (avoid extreme-drift interruptions)
+        const isSongStillLoading = lastSongSync.current.id && (Date.now() - lastSongSync.current.time) < 10000;
+        if (currentSong?.name === localName && localName && !isSongStillLoading) {
             // Simple elapsed time calculation (no clock sync complexity)
             const referenceTime = localReceivedTime || lastUpdated;
             const elapsedSinceUpdate = (Date.now() - referenceTime) / 1000;
