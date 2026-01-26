@@ -449,6 +449,7 @@ export default function ListenTogether({
 
     // Track last sync to avoid loops when Cider is slow to update
     const lastSongSync = useRef({ id: null, time: 0 });
+    const songRetryCountRef = useRef({ songId: null, count: 0 }); // [Fix] Track retry attempts
     const lastSeekSync = useRef(0); // Throttle seek actions
     const ciderStateRef = useRef(ciderState); // [NEW] Ref for stable polling
     const queueRef = useRef([]); // [FastPath] Cached Queue
@@ -515,6 +516,12 @@ export default function ListenTogether({
         // Song Sync
         // Only sync if local state is valid (object or null, not error object)
         const localName = ciderState.nowPlaying?.name;
+
+        // [Fix] Reset retry counter when song is confirmed as loaded
+        if (localName && currentSong?.name === localName) {
+            songRetryCountRef.current = { songId: null, count: 0 };
+        }
+
         if (currentSong?.name !== localName) {
             console.log("🎵 Sync: Song mismatch detected! Server:", currentSong?.name, "| Local:", localName);
             // Avoid syncing if local state looks like an error
@@ -534,20 +541,35 @@ export default function ListenTogether({
                 // Only apply debounce if we have a valid songId AND it matches the last sync
                 const shouldDebounce = songId && lastSongSync.current.id &&
                                       songId === lastSongSync.current.id &&
-                                      (now - lastSongSync.current.time) < 5000;
+                                      (now - lastSongSync.current.time) < 8000; // [Fix] Increased debounce from 5s to 8s
 
                 console.log("🔍 Sync Debug: songId:", songId, "| lastSync:", lastSongSync.current.id, "| shouldDebounce:", shouldDebounce);
 
                 if (shouldDebounce) {
                     console.log("⏸️ Sync: Debouncing Song Sync (waiting for Cider to load)...");
                 } else {
-                    console.log("▶️ Sync: Attempting to play:", currentSong?.name, "| Song Object:", JSON.stringify(currentSong, null, 2));
-                    if (currentSong && (!localName || currentSong.name !== localName)) {
-                        console.log("✅ Sync: Triggering Play Song:", currentSong.name);
-                        lastSongSync.current = { id: songId, time: now }; // Update Ref
-                        onRemoteAction('play_song', currentSong);
+                    // [Fix] Track retry attempts to prevent infinite loops
+                    if (songRetryCountRef.current.songId === songId) {
+                        songRetryCountRef.current.count++;
                     } else {
-                        console.log("❌ Sync: Skipping - condition not met");
+                        songRetryCountRef.current = { songId, count: 1 };
+                    }
+
+                    const retryCount = songRetryCountRef.current.count;
+                    const MAX_RETRIES = 5; // Maximum attempts before giving up
+
+                    if (retryCount > MAX_RETRIES) {
+                        console.log("❌ Sync: Gave up trying to play song after " + retryCount + " attempts. Cider may be slow or the song may be unavailable.");
+                        lastSongSync.current = { id: songId, time: now }; // Update ref to prevent further retries
+                    } else {
+                        console.log("▶️ Sync: Attempting to play (attempt #" + retryCount + "):", currentSong?.name, "| Song Object:", JSON.stringify(currentSong, null, 2));
+                        if (currentSong && (!localName || currentSong.name !== localName)) {
+                            console.log("✅ Sync: Triggering Play Song:", currentSong.name);
+                            lastSongSync.current = { id: songId, time: now }; // Update Ref
+                            onRemoteAction('play_song', currentSong);
+                        } else {
+                            console.log("❌ Sync: Skipping - condition not met");
+                        }
                     }
                 }
             }
